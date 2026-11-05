@@ -202,13 +202,35 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(await p.$eval('#moreBtn',b=>b.getAttribute('aria-current'))==='page','More tab is marked current while on a More page');
    await p.setViewportSize({width:1280,height:900})});
 
+ await step('sidebar folds into a hamburger menu (wide screens)',async()=>{
+   await p.setViewportSize({width:1440,height:900});await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await p.goto(BASE+'#/dashboard');await p.reload();await p.waitForTimeout(400);
+   const st=()=>p.evaluate(()=>{const v=s=>{const e=document.querySelector(s);if(!e)return false;const r=e.getBoundingClientRect(),c=getComputedStyle(e);return c.display!=='none'&&c.visibility!=='hidden'&&r.width>0&&r.right>0&&r.top>=0&&r.top<80};return {side:v('#sidebar'),top:v('#topbar'),logo:v('#topbar .brand'),attr:document.documentElement.dataset.sidebar,ml:getComputedStyle(document.querySelector('.content')).marginLeft}});
+   let a=await st();ok(a.side&&!a.top&&a.attr==='open','sidebar: open by default; sticky bar hidden');
+   ok(await p.$eval('#menuBtn',b=>b.getAttribute('aria-label')==='Hide menu'&&b.getAttribute('aria-expanded')==='true'&&b.getAttribute('aria-controls')==='sidebar'),'sidebar: hamburger says "Hide menu", expanded, controls the sidebar');
+   await p.click('#menuBtn');await p.waitForTimeout(500);a=await st();
+   ok(!a.side&&a.top&&a.logo&&a.attr==='folded'&&a.ml==='0px','sidebar: folded -> sticky bar with logo shows, content full width');
+   ok(await p.$eval('#menuBtnTop',b=>b.getAttribute('aria-label')==='Show menu'&&b.getAttribute('aria-expanded')==='false'&&document.activeElement===b),'sidebar: folded -> "Show menu", collapsed, focus on the toggle');
+   await p.evaluate(()=>window.scrollTo(0,1200));await p.waitForTimeout(400);a=await st();ok(a.top&&a.logo,'sidebar: the logo bar stays visible after scrolling');
+   await p.evaluate(()=>window.scrollTo(0,0));
+   await p.reload();await p.waitForTimeout(400);a=await st();ok(a.attr==='folded'&&!a.side&&a.top,'sidebar: folded choice survives reload');
+   await p.focus('#menuBtnTop');let reach=false;for(let i=0;i<40&&!reach;i++){await p.keyboard.press('Tab');reach=await p.evaluate(()=>!!document.activeElement.closest('#sidebar'))}
+   ok(!reach,'sidebar: Tab never reaches the folded sidebar');
+   await p.goto(BASE+'#/practice');await p.waitForTimeout(300);
+   await p.evaluate(()=>Shell.focusMode.enter());await p.waitForTimeout(500);ok(!(await st()).top,'sidebar: focus mode hides the sticky bar');await p.evaluate(()=>Shell.focusMode.exit());await p.waitForTimeout(500);
+   await p.click('#menuBtnTop');await p.waitForTimeout(500);a=await st();
+   ok(a.side&&!a.top&&a.attr==='open'&&await p.evaluate(()=>document.activeElement.id==='menuBtn'&&localStorage.getItem('celpip_sidebar')==='open'),'sidebar: unfolds, focus returns to the sidebar toggle, saved as open');
+   await p.evaluate(()=>localStorage.setItem('celpip_sidebar','banana'));await p.reload();await p.waitForTimeout(300);ok((await st()).attr==='open','sidebar: junk saved value = open');
+   await p.evaluate(()=>localStorage.setItem('celpip_sidebar','folded'));await p.setViewportSize({width:390,height:844});await p.reload();await p.waitForTimeout(400);
+   ok(await p.evaluate(()=>{const v=s=>{const e=document.querySelector(s);return !!e&&e.getBoundingClientRect().width>0&&getComputedStyle(e).display!=='none'};return !v('#sidebar')&&v('#topbar')&&v('#tabBar')&&!v('#menuBtnTop')&&getComputedStyle(document.querySelector('.content')).marginLeft==='0px'}),'sidebar: below 1000px nothing changes (tab bar and phone top bar, no hamburger)');
+   await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await p.setViewportSize({width:1440,height:900});await p.reload();await p.waitForTimeout(300)});
+
  await step('theme: Light / Dark / Auto',async()=>{
    const th=()=>p.evaluate(()=>[document.documentElement.dataset.theme,document.documentElement.dataset.themePref,localStorage.getItem('celpip_theme'),getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()]);
    await p.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await go('#/settings');
    ok(await p.$$eval('#app [data-theme-set]',b=>b.length)===3,'settings: Light, Dark and Auto options');
-   await p.click('.sidebar [data-theme-set=dark]');let t=await th();ok(t[0]==='dark'&&t[2]==='dark'&&t[3]==='#0a171d','theme: Dark chosen and saved ('+t.join(' ')+')');
-   await p.click('.sidebar [data-theme-set=light]');t=await th();ok(t[0]==='light'&&t[2]==='light'&&t[3]==='#f2f6f8','theme: Light chosen and saved');
-   await p.click('#app [data-theme-set=auto]');t=await th();ok(t[0]==='light'&&t[1]==='auto'&&t[2]==='auto','theme: Auto saved; the device is light so the page is light');
+   await p.click('.sidebar [role=radio][aria-label=Dark]');let t=await th();ok(t[0]==='dark'&&t[2]==='dark'&&t[3]==='#0a171d','theme: Dark chosen and saved ('+t.join(' ')+')');
+   await p.click('.sidebar [role=radio][aria-label=Light]');t=await th();ok(t[0]==='light'&&t[2]==='light'&&t[3]==='#f2f6f8','theme: Light chosen and saved');
+   await p.click('#app [role=radio][aria-label="Auto (follow device)"]');t=await th();ok(t[0]==='light'&&t[1]==='auto'&&t[2]==='auto','theme: Auto saved; the device is light so the page is light');
    await p.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await p.waitForTimeout(100);t=await th();ok(t[0]==='dark'&&t[1]==='auto','theme: Auto follows the device to dark, live');
    await p.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await p.waitForTimeout(100);t=await th();ok(t[0]==='light','theme: Auto follows the device back to light, live');
    ok(await p.$eval('.sidebar [data-theme-set=auto]',b=>b.getAttribute('aria-checked'))==='true','theme: the chosen option is marked aria-checked');
@@ -216,7 +238,19 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    // an old saved value keeps working, a junk value means Auto
    await p.evaluate(()=>localStorage.setItem('celpip_theme','dark'));await p.reload();await p.waitForTimeout(400);t=await th();ok(t[0]==='dark'&&t[1]==='dark','theme: an old saved "dark" still works after reload');
    await p.evaluate(()=>localStorage.setItem('celpip_theme','banana'));await p.reload();await p.waitForTimeout(400);t=await th();ok(t[1]==='auto'&&t[0]==='light','theme: an unknown saved value is treated as Auto');
-   await p.evaluate(()=>localStorage.setItem('celpip_theme','auto'));await p.reload();await p.waitForTimeout(400)});
+   await p.evaluate(()=>localStorage.setItem('celpip_theme','auto'));await p.reload();await p.waitForTimeout(400);
+   // icon buttons: every option has an accessible name and tooltip, and no visible Light/Dark/Auto words in the sidebar switch
+   ok(await p.$$eval('[data-theme-set]',bs=>bs.length>=6&&bs.every(b=>b.getAttribute('aria-label')&&b.title===b.getAttribute('aria-label')&&b.querySelector('svg')&&!b.textContent.trim())),'theme icons: every option has an aria-label, a matching tooltip, an icon and no text');
+   ok(JSON.stringify(await p.$$eval('.sidebar [data-theme-set]',bs=>bs.map(b=>b.getAttribute('aria-label'))))==='["Light","Dark","Auto (follow device)"]','theme icons: names are Light, Dark, Auto (follow device)');
+   ok(await p.evaluate(()=>{const w=document.querySelector('.sidebar [data-theme-switch]');const l=w.querySelector('.seg-label'),r=l.getBoundingClientRect();return l.textContent==='Theme'&&r.width<=1&&!/Light|Dark|Auto/.test(w.innerText)}),'theme icons: sidebar switch shows no words, "Theme" label kept for screen readers');
+   ok(await p.evaluate(()=>{const l=document.querySelector('#app .seg-label');return !!l&&l.getBoundingClientRect().width>10}),'theme icons: Settings still shows the visible "Theme" label');
+   ok(await p.$$eval('.sidebar [data-theme-set]',bs=>bs.every(b=>{const r=b.getBoundingClientRect();return r.width>=36&&r.height>=44})),'theme icons: sidebar targets are at least 44px tall');
+   const phc=await b.newContext({viewport:{width:390,height:844}});const ph=await phc.newPage();await ph.goto(BASE+'#/dashboard');await ph.evaluate(()=>localStorage.setItem('celpip_theme','light'));await ph.reload();await ph.waitForTimeout(400);
+   const pb=()=>ph.$eval('#themeBtn',e=>[e.getAttribute('aria-label'),e.querySelector('use').getAttribute('href')].join('|'));
+   const seq=[await pb()];for(let i=0;i<3;i++){await ph.click('#themeBtn');await ph.waitForTimeout(150);seq.push(await pb())}
+   ok(seq.join(' ; ')==='Theme: Light, change|#i-sun ; Theme: Dark, change|#i-moon ; Theme: Auto, change|#i-theme ; Theme: Light, change|#i-sun','phone theme button: icon and label follow Light > Dark > Auto > Light ('+seq.join(' ; ')+')');
+   ok(await ph.$eval('#themeBtn',e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44}),'phone theme button is at least 44px');
+   await phc.close()});
 
  await step('focus mode in practice',async()=>{
    await go('#/practice/reading');ok(!(await vis('#exitBtn')),'focus: no Exit button on the practice menu page');

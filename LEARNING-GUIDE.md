@@ -105,3 +105,8 @@ All new material was written by AI assistants on 2026-10-22, in the style of the
 - **Toast**: a small message that appears for a moment and fades away.
 - **textContent**: puts text on the page as plain letters, so typed HTML cannot run.
 - **Boundary event**: the browser voice announcing that it is about to say the next word.
+
+## Theme icons and the folding sidebar (T-029 follow-up)
+- The theme switch is three icon buttons (sun = Light, moon = Dark, half circle = Auto). Each has an `aria-label` and a `title`, so screen readers and hover tooltips still say the words. The word "Theme" is visually hidden in the sidebar and the More sheet, and visible in Settings.
+- On wide screens the hamburger button folds the sidebar. `<html data-sidebar="open|folded">` drives the CSS, `localStorage` key `celpip_sidebar` remembers it, and the folded sidebar gets `inert` so Tab skips it. The slim top bar then shows the logo, so it is always visible.
+- Glossary: **inert** = an HTML attribute that makes an element unreachable by keyboard and screen readers; **radiogroup** = a set of options where exactly one is chosen.

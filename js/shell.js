@@ -1,12 +1,14 @@
 /*
  * LEARNING NOTE (for beginners): this file runs the "shell" of the app, the frame around every screen.
  * The shell is: the left menu (sidebar) on wide screens, the top bar and bottom tab bar on phones, the "More" sheet,
- * the Light / Dark / Auto theme switch, "focus mode" (menus hidden during a practice run or the exam, with an Exit button),
+ * the Light / Dark / Auto theme switch (three icon buttons: sun, moon, half-filled circle; each has a spoken name and a tooltip, so no words show), "focus mode" (menus hidden during a practice run or the exam, with an Exit button),
  * the header that changes when you scroll, and the contents list beside a lesson.
  * It loads BEFORE js/app.js and offers one object, Shell. app.js calls Shell at three moments:
  *   Shell.beforeRender(section)  when a screen is about to be drawn (clean up and mark the current menu item),
  *   Shell.afterRender()          right after it is drawn (mark the screen title, fill the theme switches),
  *   Shell.focusMode.enter / exit when a practice run or the exam starts or ends.
+ * Folding the sidebar (wide screens only): the hamburger button hides the left menu and a slim sticky top bar (hamburger, logo, theme button)
+ * stays at the top so the logo is always visible. The choice is stored in localStorage under "celpip_sidebar" ("open" or "folded").
  * Defaults the Board has not confirmed are collected in SETTINGS below so each can be changed in one place.
  * Nothing here talks to the network. The only thing stored is the theme choice, in localStorage under "celpip_theme".
  */
@@ -33,6 +35,10 @@ const Shell = (function () {
   const prefersReduced = () => reducedQuery.matches;
   const THEMES = ["light", "dark", "auto"];
   const THEME_LABELS = { light: "Light", dark: "Dark", auto: "Auto" };
+  // The full spoken name of each option (used for aria-label and the hover tooltip, since the buttons show only a picture).
+  const THEME_NAMES = { light: "Light", dark: "Dark", auto: "Auto (follow device)" };
+  // Which drawing in the icon sprite (index.html) pictures each option. Auto uses the half-filled circle.
+  const THEME_ICONS = { light: "#i-sun", dark: "#i-moon", auto: "#i-theme" };
 
   // ---------- Theme: Light / Dark / Auto ----------
   // "pref" is what the person chose (light, dark or auto). "resolved" is what is actually shown (light or dark).
@@ -58,10 +64,13 @@ const Shell = (function () {
       b.setAttribute("aria-checked", String(on));
       b.tabIndex = on ? 0 : -1;  // only the chosen option is in the tab order; arrow keys move between the three
     });
+    // The phone's top-bar button pictures the CURRENT choice and its name says what it is and what pressing does.
     const btn = document.getElementById("themeBtn");
     if (btn) {
-      btn.setAttribute("aria-label", "Theme: " + THEME_LABELS[pref] + ". Press to change.");
+      btn.setAttribute("aria-label", "Theme: " + THEME_LABELS[pref] + ", change");
       btn.setAttribute("title", "Theme: " + THEME_LABELS[pref]);
+      const use = btn.querySelector("use");
+      if (use) use.setAttribute("href", THEME_ICONS[pref]);
     }
   }
   function setTheme(pref) {
@@ -75,11 +84,11 @@ const Shell = (function () {
   const onDeviceTheme = () => { if (getPref() === "auto") paintTheme("auto"); };
   if (darkQuery.addEventListener) darkQuery.addEventListener("change", onDeviceTheme); else if (darkQuery.addListener) darkQuery.addListener(onDeviceTheme);
 
-  // The segmented control (a "radio group"): three buttons, one chosen. Built from one template for all three places.
+  // The segmented control (a "radio group"): three icon buttons, one chosen. The "Theme" label is always in the page for screen readers; the CSS hides it in the sidebar and More sheet. Built from one template for all three places.
   function themeSwitchHtml() {
     return '<span class="seg-label" id="themeLabel' + (themeSwitchCount++) + '">Theme</span>' +
       '<div class="seg" role="radiogroup" aria-labelledby="themeLabel' + (themeSwitchCount - 1) + '">' +
-      THEMES.map(v => '<button type="button" class="seg-opt" role="radio" aria-checked="false" tabindex="-1" data-theme-set="' + v + '">' + THEME_LABELS[v] + "</button>").join("") +
+      THEMES.map(v => '<button type="button" class="seg-opt" role="radio" aria-checked="false" tabindex="-1" data-theme-set="' + v + '" aria-label="' + THEME_NAMES[v] + '" title="' + THEME_NAMES[v] + '"><svg class="seg-ico" aria-hidden="true"><use href="' + THEME_ICONS[v] + '"/></svg></button>').join("") +
       "</div>";
   }
   let themeSwitchCount = 0;
@@ -301,6 +310,36 @@ const Shell = (function () {
     if (h1) h1.classList.add("screen-title");
     fillThemeSwitches();
   }
+
+  // ---------- Folding the sidebar ----------
+  // The state lives on <html data-sidebar="open|folded">; the CSS (wide screens only) does the sliding and shows the slim top bar.
+  // A folded sidebar also gets the "inert" attribute, which takes it out of the Tab order and away from screen readers.
+  function getSidebar() {
+    try { return localStorage.getItem("celpip_sidebar") === "folded" ? "folded" : "open"; } catch (e) { return "open"; }  // junk = open
+  }
+  function paintSidebar(state) {
+    root.setAttribute("data-sidebar", state);
+    const folded = state === "folded";
+    const side = document.getElementById("sidebar");
+    if (side) side.inert = folded;
+    document.querySelectorAll("[data-menu-toggle]").forEach(b => {
+      b.setAttribute("aria-expanded", String(!folded));
+      b.setAttribute("aria-label", folded ? "Show menu" : "Hide menu");
+      b.title = folded ? "Show menu" : "Hide menu";
+    });
+  }
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-menu-toggle]");
+    if (!b) return;
+    const next = getSidebar() === "folded" ? "open" : "folded";
+    try { localStorage.setItem("celpip_sidebar", next); } catch (err) {}
+    paintSidebar(next);
+    // move focus to the toggle that is now showing, so keyboard users do not lose their place
+    const target = document.querySelector(next === "folded" ? "#menuBtnTop" : "#menuBtn");
+    if (target) target.focus();
+  });
+  paintSidebar(getSidebar());
+  document.addEventListener("DOMContentLoaded", () => paintSidebar(getSidebar()));
 
   // First paint of the theme controls (the inline script in index.html already set data-theme before anything drew).
   paintTheme(getPref());

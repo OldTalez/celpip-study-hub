@@ -127,7 +127,10 @@ a[aria-current="page"] { font-weight: 700; }
 
 .sidebar { display: none; }
 .sidebar .brand, .topbar .brand { font: var(--heading-weight) 1.125rem/1.15 var(--serif); letter-spacing: -.01em; color: var(--text); }
-.sidebar .brand { padding: 4px 10px 16px; }
+.side-head { display: flex; align-items: center; gap: 8px; padding: 0 0 16px; }
+.sidebar .brand { padding: 4px 4px; }
+.topbar .brand { margin-right: auto; }
+.topbar .menu-btn { display: none; } /* only wide screens fold the menu; see the min-width block below */
 .nav-ico { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ico-svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -140,16 +143,19 @@ nav#mainNav a:focus-visible, .sheet-list a:focus-visible { outline-offset: -3px;
 nav#mainNav a[aria-current="page"], .sheet-list a[aria-current="page"] { background: var(--surface-2); color: var(--text); font-weight: 800; }
 nav#mainNav a[aria-current="page"]::before { transform: scaleY(1); }
 
-/* Theme choice: a three-option segmented control (radio group). The chosen one has a filled pill, bold text and a check. */
+/* Theme choice: a three-option segmented control (radio group) of icon buttons (sun, moon, half circle). The chosen one has a filled --bg pill and a 2px ring, so it is not shown by colour alone. */
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: var(--surface-2); border-radius: var(--radius-btn); }
 .seg-opt { min-height: 44px; border: 0; border-radius: var(--radius-btn); background: transparent; color: var(--muted); font: 700 .875rem var(--font); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 6px; transition: background-color var(--dur-3) var(--ease-io), color var(--dur-2) var(--ease-io), transform var(--dur-1) var(--ease-out); }
 .seg-opt:focus-visible { outline-offset: -3px; }
 .seg-opt:active { transform: scale(.97); }
 @media (hover: hover) { .seg-opt:hover:not([aria-checked="true"]) { color: var(--text); } }
-.seg-opt[aria-checked="true"] { background: var(--bg); color: var(--text); font-weight: 800; box-shadow: inset 0 0 0 2px var(--ctl); }
-.seg-opt[aria-checked="true"]::before { content: ""; width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--i-check) center / contain no-repeat; mask: var(--i-check) center / contain no-repeat; }
+.seg-opt[aria-checked="true"] { background: var(--bg); color: var(--text); box-shadow: inset 0 0 0 2px var(--ctl); }
+.seg-ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.seg-opt[aria-checked="true"] .seg-ico { stroke-width: 2.5; }
 .sidebar .seg-wrap { margin-top: auto; padding: 12px 4px 0; }
-.sidebar .seg-label, .seg-wrap .seg-label { display: block; font: 700 .8125rem var(--font); color: var(--muted); margin: 0 4px 6px; }
+.seg-wrap .seg-label { display: block; font: 700 .8125rem var(--font); color: var(--muted); margin: 0 4px 6px; }
+/* In the sidebar and the More sheet the word "Theme" is hidden from the eye but stays for screen readers (the standard visually-hidden recipe). */
+.sidebar .seg-label, .sheet .seg-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* Small drawn icons used by CSS (as masks, so they take the text colour). */
 :root {
@@ -205,12 +211,20 @@ body[data-mode="focus"] .taskbar { display: flex; animation: chrome-in var(--dur
 /* Layout switch. 1000px and up: sidebar. Below 1000px: top bar + bottom tabs. (Board default, easy to change: change both 1000s.) */
 @media (min-width: 1000px) {
   .sidebar { display: flex; flex-direction: column; position: fixed; z-index: 25; left: 0; top: 0; bottom: 0; width: var(--side-w); padding: 16px 10px; background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; transition: transform var(--dur-4) var(--ease-io), opacity var(--dur-4) var(--ease-io), visibility var(--dur-4); }
-  .content { margin-left: var(--side-w); }
+  .content { margin-left: var(--side-w); transition: margin-left var(--dur-4) var(--ease-io); }
   .topbar, .tabbar, .only-phone { display: none; }
   /* sticky screen bar: the first h1 of each screen (JS adds .screen-title). 64px, shrinks to 48px after 24px of scroll and gains a bottom line. */
   main#app > .screen-title { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; height: var(--bar-h); margin: 0 calc(-1 * var(--gut)) .75rem; padding: 0 var(--gut); background: var(--bg); font-size: 1.5rem; border-bottom: 1px solid transparent; transition: border-color var(--dur-3) var(--ease-io); }
   html[data-scrolled="1"] main#app > .screen-title { border-bottom-color: var(--line); }
   main#app { padding-top: 0; }
+  /* Folded sidebar: slides away (visibility also switches so Tab skips it), content takes the full width, and the slim top bar
+     (hamburger, logo, theme button) stays pinned at the top. It never hides on scroll and is gone in focus mode. */
+  html[data-sidebar="folded"] .sidebar { transform: translateX(-100%); visibility: hidden; }
+  html[data-sidebar="folded"] .content { margin-left: 0; }
+  html[data-sidebar="folded"] body:not([data-mode="focus"]) .topbar { display: flex; transform: none; }
+  html[data-sidebar="folded"] .topbar .menu-btn { display: inline-grid; }
+  html[data-sidebar="folded"] main#app > .screen-title { top: 56px; }
+  html[data-sidebar="folded"] body:not([data-mode="focus"]) .toast-host { left: var(--gut); }
   body[data-mode="focus"] .sidebar { transform: translateX(-100%); opacity: 0; visibility: hidden; }
   body[data-mode="focus"] .content { margin-left: 0; }
 }
