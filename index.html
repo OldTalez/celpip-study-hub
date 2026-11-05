@@ -1,20 +1,22 @@
 <!doctype html>
-<!--
-  LEARNING NOTE (for beginners):
-  This is the one and only page of the app. It holds the header, a footer and an empty main area
-  (id "app"). The scripts at the bottom fill that area with Home, Learn, Practice and other screens.
-  Order matters: the question data files load first, then the generated study material (js/data/new/),
-  then shell.js (the frame: menus, theme switch, focus mode; it needs only the page itself), storage.js, scoring.js, app.js (the practice and exam engines) and finally study.js (the screens
-  and study tools). Open this file in a browser to run the app; there is no server and no install step.
-  Version 2 (2026-10-22): no outside libraries and no network calls (the old Chart.js link and the optional
-  AI-grading key were removed), a light and a dark theme, and a lot more study material.
-  Look "A Lakeline" (2026-11-05, T-029 turn A): a left menu on wide screens, a bottom tab bar on phones, a Light / Dark / Auto
-  theme switch, and fonts bundled in fonts/ (no outside server). See LEARNING-GUIDE.md.
--->
 <html lang="en" data-theme="light" data-theme-pref="auto">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8"> <!-- first in <head>: the browser must see the character set within the first 1024 bytes, so the long note below sits after it -->
+  <!--
+    LEARNING NOTE (for beginners):
+    This is the one and only page of the app. It holds the header, a footer and an empty main area
+    (id "app"). The scripts at the bottom fill that area with Home, Learn, Practice and other screens.
+    All scripts are marked "defer" (T-031 turn C): the page shows first and the scripts run in the same order once it is read. Order matters: the question data files load first, then the generated study material (js/data/new/),
+    then shell.js (the frame: menus, theme switch, focus mode; it needs only the page itself), storage.js, scoring.js, app.js (the practice and exam engines) and finally study.js (the screens
+    and study tools). Open this file in a browser to run the app; there is no server and no install step.
+    Version 2 (2026-10-22): no outside libraries and no network calls (the old Chart.js link and the optional
+    AI-grading key were removed), a light and a dark theme, and a lot more study material.
+    Look "A Lakeline" (2026-11-05, T-029 turn A): a left menu on wide screens, a bottom tab bar on phones, a Light / Dark / Auto
+    theme switch, and fonts bundled in fonts/ (no outside server). See LEARNING-GUIDE.md.
+    Installable app (2026-11-05, T-031 turn A): teal icons, iPhone full-screen tags, js/appfeel.js (install, update notice, offline label). See LEARNING-GUIDE.md, "Installing the app".
+  -->
+  <meta name="description" content="Free CELPIP self-study hub: practice, plan and track your progress. Unofficial, original material.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"> <!-- viewport-fit=cover lets the page use the whole iPhone screen; the CSS then keeps bars clear of the notch and home bar with env(safe-area-inset-*) -->
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow"> <!-- Board, 2026-11-05: keep the site out of search engines -->
   <title>CELPIP Study Hub</title>
@@ -38,7 +40,14 @@
   <link rel="stylesheet" href="css/style.css">
   <!-- Used when the app is opened from its website: name and icon for "Add to Home Screen". Ignored when opened as a file. -->
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icon-512.png">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="apple-touch-icon-180.png">
+  <!-- iPhone and iPad: open from the Home Screen like an app (no Safari bars), with a short name under the icon. "default" status bar = dark text on the light bar. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="CELPIP">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- js/shell.js rewrites these two to the colour of the theme that is showing -->
   <meta name="theme-color" content="#f2f6f8" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a171d" media="(prefers-color-scheme: dark)">
@@ -63,6 +72,9 @@
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></symbol>
     <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1"/></symbol>
+    <symbol id="i-offline" viewBox="0 0 24 24"><path d="M3 3l18 18M8.5 16.4a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 3-2M12 20h.01M19 12.9a10 10 0 0 0-8-2.9"/></symbol>
+    <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
   </defs></svg>
 
   <a class="skip-link" href="#app">Skip to content</a>
@@ -70,6 +82,7 @@
   <!-- Wide screens (1000px and up): left menu. Hidden on phones by the CSS. -->
   <aside class="sidebar" id="sidebar">
     <div class="side-head"><button class="icon-btn menu-btn" type="button" data-menu-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Hide menu" title="Hide menu" id="menuBtn"><svg class="ico-svg" aria-hidden="true"><use href="#i-menu"/></svg></button><div class="brand">CELPIP<br>Study Hub</div></div>
+    <div class="profile-wrap" data-profile-switch></div>
     <nav id="mainNav" aria-label="Main">
       <a href="#/dashboard" data-section="dashboard"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg>Home</a>
       <a href="#/learn" data-section="learn"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn</a>
@@ -83,6 +96,8 @@
       <a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a>
       <a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a>
     </nav>
+    <p class="offline-pill" data-offline-pill hidden></p>
+    <button type="button" class="btn btn-quiet kbd-only" data-shortcut-sheet>Keyboard shortcuts (?)</button>
     <div class="seg-wrap" data-theme-switch></div>
   </aside>
 
@@ -91,6 +106,7 @@
     <header class="topbar" id="topbar">
       <button class="icon-btn menu-btn" type="button" data-menu-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Hide menu" title="Hide menu" id="menuBtnTop"><svg class="ico-svg" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <div class="brand">CELPIP Study Hub</div>
+      <p class="offline-pill" data-offline-pill hidden></p>
       <button class="icon-btn" id="themeBtn" type="button" aria-label="Theme: Auto, change">
         <svg class="ico-svg" aria-hidden="true"><use href="#i-theme"/></svg>
       </button>
@@ -132,6 +148,8 @@
       <li><a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a></li>
       <li><a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a></li>
     </ul>
+    <div class="profile-wrap" data-profile-switch></div>
+    <div class="dlg-body install-box" data-install-box hidden></div>
     <div class="seg-wrap" data-theme-switch></div>
     <div class="dlg-actions"><button class="btn" type="button" data-close-sheet>Close</button></div>
   </dialog>
@@ -148,35 +166,37 @@
   </dialog>
 
   <!-- Practice material (original, unofficial). Listening and reading pools first, then the files that gather them. -->
-  <script src="js/data/listening_pool_1.js"></script>
-  <script src="js/data/listening_pool_2.js"></script>
-  <script src="js/data/listening_pool_3.js"></script>
-  <script src="js/data/reading_pool_1.js"></script>
-  <script src="js/data/reading_pool_2.js"></script>
-  <script src="js/data/writing_speaking_pool.js"></script>
-  <script src="js/data/listening.js"></script>
-  <script src="js/data/reading.js"></script>
-  <script src="js/data/writing.js"></script>
-  <script src="js/data/speaking.js"></script>
+  <script src="js/data/listening_pool_1.js" defer></script>
+  <script src="js/data/listening_pool_2.js" defer></script>
+  <script src="js/data/listening_pool_3.js" defer></script>
+  <script src="js/data/reading_pool_1.js" defer></script>
+  <script src="js/data/reading_pool_2.js" defer></script>
+  <script src="js/data/writing_speaking_pool.js" defer></script>
+  <script src="js/data/listening.js" defer></script>
+  <script src="js/data/reading.js" defer></script>
+  <script src="js/data/writing.js" defer></script>
+  <script src="js/data/speaking.js" defer></script>
   <!-- New in v2 (generated 2026-10-22, answer keys and explanations need a human spot-check). -->
-  <script src="js/data/new/explanations.js"></script>
-  <script src="js/data/new/writing_models.js"></script>
-  <script src="js/data/new/speaking_models.js"></script>
-  <script src="js/data/new/vocab.js"></script>
-  <script src="js/data/new/grammar.js"></script>
-  <script src="js/data/new/lessons.js"></script>
-  <script src="js/shell.js"></script>
-  <script src="js/storage.js"></script>
-  <script src="js/prescription.js"></script>
-  <script src="js/calendar.js"></script>
-  <script src="js/scoring.js"></script>
-  <script src="js/tools.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/study.js"></script>
-  <!-- On the website (https), save the app for offline use (see sw.js). Opened as a file, this does nothing. -->
-  <script>
-    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost"))
-      addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
-  </script>
+  <script src="js/data/new/explanations.js" defer></script>
+  <script src="js/data/new/writing_models.js" defer></script>
+  <script src="js/data/new/speaking_models.js" defer></script>
+  <script src="js/data/new/vocab.js" defer></script>
+  <script src="js/data/new/grammar.js" defer></script>
+  <script src="js/data/new/lessons.js" defer></script>
+  <script src="js/shell.js" defer></script>
+  <script src="js/profiles.js" defer></script> <!-- who is studying: the profile list, key names, migration (must come before storage.js) -->
+  <script src="js/storage.js" defer></script>
+  <script src="js/prescription.js" defer></script>
+  <script src="js/calendar.js" defer></script>
+  <script src="js/scoring.js" defer></script>
+  <script src="js/tools.js" defer></script>
+  <script src="js/drafts.js" defer></script> <!-- practice drafts: keeps an unfinished Reading, Listening or Writing practice so it can be resumed (needs Profiles) -->
+  <script src="js/app.js" defer></script>
+  <script src="js/study.js" defer></script>
+  <script src="js/shortcuts.js" defer></script> <!-- desktop keyboard shortcuts and the tap buzz (needs Storage) -->
+  <script src="js/appfeel.js" defer></script> <!-- install button, update notice, offline label, storage safety, icon badge (needs Toast, Storage and Study above) -->
+  <script src="js/transfer.js" defer></script> <!-- share the backup file and move a profile by QR codes (loads its QR libraries from js/vendor/ only when a QR screen opens) -->
+  <script src="js/profile-ui.js" defer></script> <!-- profile button, "Who's studying?" chooser, Profiles card in Settings (needs Profiles, Shell, Study) -->
+  <!-- The offline helper (sw.js) is registered by js/appfeel.js, which also shows the "New version ready" notice. -->
 </body>
 </html>

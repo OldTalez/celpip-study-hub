@@ -14,7 +14,9 @@
  * T-030 turn 2 (2026-11-05): the dashboard is now called Home (HOME_LABEL) and has a "My plan" overview card (homePlanCard); My plan gained
  * on-track words and icons, a gentle check-in after missed days (planModel, checkInHtml), a closed "add study time" form and a calendar
  * download (CalendarExport in js/calendar.js).
- * T-029 turn C (2026-11-05): the dashboard gained a radar chart (radarTile), a pace tile (paceTile, one constant PACE_GUIDE_SEC)
+ * T-031 turn A (2026-11-05): Settings gained an install box and the "Protected from automatic clean-up" line, Home can show the monthly backup
+ * reminder, the mastery table scrolls inside its tile on a phone, and Study offers dueMistakeCount, download and today to js/appfeel.js.
+ * T-029 turn C (2026-11-05): the dashboard gained a radar chart (radarTile), a pace tile (paceTile; since turn C one table, PACE_GUIDE, per Reading part)
  * and a mastery grid by part (masteryTile), all hand-drawn or plain HTML, no chart library.
  * T-029 turn A (2026-11-05): the Learn screens got a contents list ("On this page", built by Shell.contents in js/shell.js),
  * Settings got the Light / Dark / Auto theme switch and a visible On/Off word on the transcripts switch, and the old
@@ -57,6 +59,9 @@
   function getPartStats() { return Storage.get("partStats", {}); }
 
   window.Study = {
+    resetTransient() { diagSkill = null; }, // called when the learner switches profile: a half-started diagnostic belongs to the old profile
+    download, today, // shared with js/appfeel.js (the backup export)
+    dueMistakeCount() { return dueMistakes().length; }, // js/appfeel.js shows this number on the app icon
     // Called after a multiple-choice passage is checked. Updates per-part accuracy (for weak spots) and the review queue.
     recordMcq(skillId, passage, answers, mode) {
       const mistakes = getMistakes();
@@ -270,13 +275,22 @@
       <div id="radarTable" hidden><table class="history-table"><caption class="sr-only">Latest level in each skill against your target</caption><thead><tr><th>Skill</th><th>Latest level</th><th>Target</th><th>Gap</th><th>Date</th></tr></thead><tbody>${trs}</tbody></table></div>`;
   }
 
-  // LEARNING NOTE: "pace" is how long you spend on each multiple-choice question. PACE_GUIDE_SEC is the one number the
-  // tile compares against. It is a guide, not a rule: the official Reading allowance is 43 to 56 minutes
-  // (celpip.ca "Test Format & Scoring", supplied by the Board 2026-11-05). The page gives no question count; the usual figure of 38
-  // questions comes from third-party sites and is UNOFFICIAL, so the per-question pace (about 68 to 88 seconds) is only a rough
-  // guess and 90 seconds is a round, editable ceiling.
-  // Change this one constant to change the guide everywhere.
-  const PACE_GUIDE_SEC = 90;
+  // LEARNING NOTE: "pace" is how long you spend on each multiple-choice question. This ONE table is the guide the Pace tile compares against.
+  // Evidence: [[Knowledge/Research/2026-11-05 celpip-study-prescription-evidence]]. The official Reading allowance is 43 to 56 minutes for 4 parts
+  // (celpip.ca "Test Format & Scoring", supplied by the Board 2026-11-05). The page gives NO question counts. The counts below (11, 8, 9, 10 = 38) are
+  // what this app's own Reading passages hold; prep sites quote the same 38, but that is third-party, so the whole guide is an ESTIMATE.
+  // Each part gets its share of the official minutes in proportion to its questions. (Because the split is by question count, every part
+  // comes out at the same seconds per question; the parts differ in how many minutes the whole part is worth.)
+  // Change READING_PART_QUESTIONS and everything below, on the tile and in the labels, follows.
+  const READING_MINUTES = { low: 43, high: 56 };
+  const READING_PART_QUESTIONS = [11, 8, 9, 10];
+  const READING_Q_TOTAL = READING_PART_QUESTIONS.reduce((a, b) => a + b, 0);
+  const PACE_GUIDE = READING_PART_QUESTIONS.map((q, i) => ({
+    part: i + 1, questions: q,
+    minLow: Math.round((READING_MINUTES.low * q / READING_Q_TOTAL) * 10) / 10, minHigh: Math.round((READING_MINUTES.high * q / READING_Q_TOTAL) * 10) / 10,   // minutes for the whole part
+    secLow: Math.round(READING_MINUTES.low * 60 / READING_Q_TOTAL), secHigh: Math.round(READING_MINUTES.high * 60 / READING_Q_TOTAL)                         // seconds per question
+  }));
+  const PACE_NOTE = "guide, estimated from the official time; question counts are not official";
   const PACE_ATTEMPTS = 10;
   function paceTile(history) {
     const timed = history.filter(h => h.timing && Array.isArray(h.timing.perQuestionSec)).slice(-PACE_ATTEMPTS);
@@ -284,12 +298,33 @@
     const secs = [].concat(...timed.map(h => h.timing.perQuestionSec)).filter(v => v > 0);
     if (!secs.length) return `<h2>Pace</h2><p class="muted">No timing yet. Finish a Reading or Listening practice, or the timed exam, and your time per question shows here.</p>`;
     const avg = Math.round(secs.reduce((a, b) => a + b, 0) / secs.length);
-    const slow = avg > PACE_GUIDE_SEC;
+    const top = PACE_GUIDE[0].secHigh, low = PACE_GUIDE[0].secLow;      // the same for every part (see the note above)
+    const slow = avg > top;
     const m = Math.floor(avg / 60), r = avg % 60;
+    // Reading practice attempts record which passages were used, so their seconds can be sorted by part.
+    const byPart = {};
+    timed.forEach(h => {
+      if (h.skill !== "reading" || !Array.isArray(h.passageIds)) return;
+      let at = 0;
+      h.passageIds.forEach(pid => {
+        const ps = skillById("reading").data.passages.find(x => x.id === pid);
+        if (!ps) return;
+        const part = ps.partNum, n = ps.questions.length, chunk = h.timing.perQuestionSec.slice(at, at + n).filter(v => v > 0);
+        at += n;
+        if (chunk.length && part >= 1 && part <= PACE_GUIDE.length) { const o = byPart[part] || (byPart[part] = { sum: 0, n: 0 }); o.sum += chunk.reduce((a, b) => a + b, 0); o.n += chunk.length; }
+      });
+    });
+    const partRows = PACE_GUIDE.map(g => {
+      const o = byPart[g.part];
+      const mine = o ? Math.round(o.sum / o.n) : null;
+      return `<li><span>Part ${g.part} <span class="muted small">(${g.questions} questions, ${g.minLow} to ${g.minHigh} min)</span></span> <strong>${mine === null ? "no timing yet" : mine + "s" + (mine > g.secHigh ? " (slow)" : " (on pace)")}</strong></li>`;
+    }).join("");
     return `<h2>Pace</h2>
-      <div class="pace-row"><div class="tile-num" id="paceNum">${avg}<span class="pace-unit">s</span></div><p class="muted small">average per question<br>your guide: ${PACE_GUIDE_SEC}s (${Math.floor(PACE_GUIDE_SEC / 60)}:${String(PACE_GUIDE_SEC % 60).padStart(2, "0")})</p></div>
+      <div class="pace-row"><div class="tile-num" id="paceNum">${avg}<span class="pace-unit">s</span></div><p class="muted small">average per question<br>your guide: ${low} to ${top}s per question</p></div>
       <p class="pace-status ${slow ? "slow" : "ok"}"><span class="pace-ico" aria-hidden="true"></span><strong>${slow ? "Running slow" : "On pace"}</strong> <span class="muted small">(${m}:${String(r).padStart(2, "0")} a question)</span></p>
-      <p class="muted small">From ${secs.length} question${secs.length === 1 ? "" : "s"} in your last ${timed.length} timed attempt${timed.length === 1 ? "" : "s"}.</p>`;
+      <p class="muted small">From ${secs.length} question${secs.length === 1 ? "" : "s"} in your last ${timed.length} timed attempt${timed.length === 1 ? "" : "s"}.</p>
+      <ul class="pace-parts" id="paceParts">${partRows}</ul>
+      <p class="muted small">Reading ${PACE_NOTE}.</p>`;
   }
 
   // Mastery grid: one cell per part. Uses the same per-part numbers as weakSpots (partStats). Each cell prints its percentage.
@@ -309,7 +344,7 @@
       return `<tr><th scope="row">${SKILL_NAMES[id]}</th>${cells.join("")}</tr>`;
     }).join("");
     return `<h2>Mastery by part</h2>
-      <table class="mastery"><caption class="sr-only">Percent right in each part. Choose a cell to practise that part.</caption><thead><tr><th scope="col">Skill</th>${[1, 2, 3, 4, 5, 6].map(n => `<th scope="col">Part ${n}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+      <div class="mastery-scroll"><table class="mastery"><caption class="sr-only">Percent right in each part. Choose a cell to practise that part.</caption><thead><tr><th scope="col">Skill</th>${[1, 2, 3, 4, 5, 6].map(n => `<th scope="col">Part ${n}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
       <p class="muted small">Percent right, and how many questions. Darker means stronger. Choose a part to practise it.</p>`;
   }
 
@@ -320,8 +355,8 @@
   document.querySelectorAll('[data-section="dashboard"]').forEach(a => { const n = Array.from(a.childNodes).reverse().find(x => x.nodeType === 3 && x.textContent.trim()); if (n) n.textContent = HOME_LABEL; });
   const CHECKIN_KEY = "celpip_checkin_v1";   // holds one date: the day the learner dismissed the check-in. Plain text, nothing else.
   const STUDIED_MIN_MINUTES = 5;             // guide: a day with at least 5 tracked minutes (or any saved attempt or log entry) counts as studied
-  function checkInDismissed(t) { try { return localStorage.getItem(CHECKIN_KEY) === t; } catch (e) { return false; } } // try/catch: storage can be blocked
-  function dismissCheckIn(t) { try { localStorage.setItem(CHECKIN_KEY, t); } catch (e) { /* blocked storage: the banner simply comes back next time */ } }
+  function checkInDismissed(t) { try { return localStorage.getItem(Profiles.key(CHECKIN_KEY)) === t; } catch (e) { return false; } } // try/catch: storage can be blocked
+  function dismissCheckIn(t) { try { localStorage.setItem(Profiles.key(CHECKIN_KEY), t); } catch (e) { /* blocked storage: the banner simply comes back next time */ } }
 
   // Everything the plan screen and the Home card both need, computed once so the two always agree.
   function planModel() {
@@ -332,12 +367,20 @@
     const sched = Prescription.schedule(settings, split.shares);
     const wkStart = Prescription.weekStart(t), td = timeData(), done = Prescription.weekDone(td.days, wkStart);
     const verdict = Prescription.onTrack(sched, split.shares, done, t);
-    const next = Prescription.nextSession(sched, settings.studyTime, now);
+    const next = Prescription.nextSession(sched, dow => Prescription.timeFor(settings, dow), now);
     const studied = studyDays();
     Object.keys(td.days).forEach(d => { const r = td.days[d]; if (r && typeof r === "object" && Object.values(r).reduce((a, v) => a + (Number(v) || 0), 0) >= STUDIED_MIN_MINUTES) studied.add(d); });
     const first = Array.from(studied).filter(d => Prescription.isDay(d)).sort()[0] || null;
     const ci = Prescription.checkIn(sched, studied, t, first);
     return { settings, history, t, latest, split, sched, wkStart, done, verdict, next, ci };
+  }
+  // ", at 07:00" when every study day has the same time, ", Mon 07:00, Wed 18:30" when they differ, "" when none is set (T-031 turn C).
+  function timesText(sched, settings, fallback) {
+    const list = sched.days.map(d => ({ dow: d.dow, t: Prescription.timeFor(settings, d.dow) || fallback || "" }));
+    if (!list.some(x => x.t)) return "";
+    const first = list[0].t;
+    if (list.every(x => x.t === first)) return (fallback ? " at " : ", at ") + escapeHtml(first);
+    return (fallback ? ": " : ", ") + list.map(x => DAY_NAMES[x.dow].slice(0, 3) + " " + (x.t ? escapeHtml(x.t) : "no time")).join(", ");
   }
   // Words plus a shape, never colour alone: tick (on track), clock (a little behind), bar (behind).
   const STATUS_SHAPE = { ontrack: "M5 12.5l4.5 4.5L19 7.5", little: "M12 6v6l4 2", behind: "M6 12h12" };
@@ -433,9 +476,10 @@
         </div>
         <div class="card tile">
           <h3>Test date</h3>
-          ${weeks !== null ? `<div class="tile-num">${weeks > 0 ? weeks : 0}</div><p class="muted small">${weeks > 0 ? `week${weeks === 1 ? "" : "s"} to go` : "Your test date has arrived or passed."}</p>` : `<p class="muted small">No date yet.</p><a class="btn btn-sm" href="#/settings" aria-label="Add your test date">Add date</a>`}
+          ${weeks !== null ? `<div class="tile-num">${weeks > 0 ? weeks : 0}</div><p class="muted small">${weeks > 0 ? `week${weeks === 1 ? "" : "s"} to go` : "Your test date has arrived or passed."}</p>` : `<p class="muted small">No date yet.</p><a class="btn btn-sm" href="#/settings" aria-label="Add date for your test">Add date</a>`}
         </div>
         ${diagDone < 4 ? `<div class="card tile span-4 today"><h2>Start here: the diagnostic</h2><p>A short cold test in each skill (${diagDone} of 4 done). It sets your starting point and shapes your plan. Do it before you study, without looking anything up.</p><a class="btn btn-primary" href="#/diagnostic">Open the diagnostic</a></div>` : ""}
+        ${window.AppFeel ? AppFeel.backupReminderHtml() : ""}
         ${homePlanCard(pm, pproj, pmil)}
         <div class="card tile span-2 tile-radar">${radarTile(history, settings.targetCLB)}</div>
         <div class="card tile span-2 tile-pace">${paceTile(history)}</div>
@@ -854,7 +898,7 @@
     })();
 
     const taskHtml = now.isStudyDay
-      ? `<p>Session today: about <strong>${now.sessionMin} minutes</strong>, in blocks of ${sched.blockMin} minutes` + (settings.studyTime ? ` at ${escapeHtml(settings.studyTime)}` : "") + `. Focus: <strong>${SKILL_NAMES[now.focus]}</strong>.</p>
+      ? `<p>Session today: about <strong>${now.sessionMin} minutes</strong>, in blocks of ${sched.blockMin} minutes` + (Prescription.timeFor(settings, new Date().getDay()) ? ` at ${escapeHtml(Prescription.timeFor(settings, new Date().getDay()))}` : "") + `. Focus: <strong>${SKILL_NAMES[now.focus]}</strong>.</p>
          <ul class="tips-list">${now.tasks.map(s => `<li><a href="${s.href}">${escapeHtml(s.text)}</a> <span class="muted">(about ${s.min} min${s.retrieval ? "" : ", not questions"})</span> <a class="btn" href="${s.href}">Start<span class="sr-only">: ${escapeHtml(s.text)}</span></a></li>`).join("")}</ul>
          <p class="muted small">${now.retrievalShare}% of today is questions and recall. The research note asks for at least 60% (Dunlosky 2013, medium confidence).</p>`
       : `<p>Today is not one of your study days (${dayList}). Next: <strong>${DAY_NAMES[(parseInt(new Date(t + "T12:00:00").getDay()) + now.nextStudyInDays) % 7]}</strong>, ${SKILL_NAMES[now.nextFocus]}.</p><p><a class="btn" href="#/practice">Study anyway</a></p>`;
@@ -900,11 +944,11 @@
         <div class="card"><p class="muted small">Concrete targets from your history. "Guide" means a number chosen for this app, not taken from research.</p><ul class="tips-list">${mHtml}</ul></div>
       </section>
       <section aria-labelledby="planRhythm"><h2 id="planRhythm" class="mt">Your rhythm</h2>
-        <p class="muted">${sched.chosen ? "Your study days: " + dayList : "You have not chosen study days, so these are suggested: " + dayList + ". Choose yours in Settings"}${settings.studyTime ? ", at " + escapeHtml(settings.studyTime) : ""}. Each session is about ${sched.sessionMin} minutes.</p>
+        <p class="muted">${sched.chosen ? "Your study days: " + dayList : "You have not chosen study days, so these are suggested: " + dayList + ". Choose yours in Settings"}${timesText(sched, settings)}. Each session is about ${sched.sessionMin} minutes.</p>
         <div class="week-plan">${rhythm}</div>
         <p class="muted small mt">The order of skills is a proposal and the time split inside a day has no research behind it. Adjust it to what works for you.</p>
         <div class="card mt"><h3>Add study sessions to my calendar</h3>
-          <p>This makes a small calendar file (.ics) with a weekly repeating session on ${sched.chosen ? "your" : "the suggested"} study days (${escapeHtml(dayList)}) at ${escapeHtml(settings.studyTime || CalendarExport.DEFAULT_TIME)}, ${sched.sessionMin} minutes long, until ${Prescription.isDay(settings.examDate) && settings.examDate > t ? "the day before your test" : CalendarExport.DEFAULT_WEEKS + " weeks from today"}. Each one has a reminder ${CalendarExport.ALARM_MIN} minutes before and lists that day's tasks.${settings.studyTime ? "" : " You have not chosen a time in Settings, so " + CalendarExport.DEFAULT_TIME + " is used."}</p>
+          <p>This makes a small calendar file (.ics) with a weekly repeating session on ${sched.chosen ? "your" : "the suggested"} study days (${escapeHtml(dayList)}) ${timesText(sched, settings, CalendarExport.DEFAULT_TIME)}, ${sched.sessionMin} minutes long, until ${Prescription.isDay(settings.examDate) && settings.examDate > t ? "the day before your test" : CalendarExport.DEFAULT_WEEKS + " weeks from today"}. Each one has a reminder ${CalendarExport.ALARM_MIN} minutes before and lists that day's tasks.${sched.days.some(d => Prescription.timeFor(settings, d.dow)) && sched.days.every(d => Prescription.timeFor(settings, d.dow)) ? "" : " A day with no time chosen in Settings uses " + CalendarExport.DEFAULT_TIME + "."}</p>
           <p class="muted small">The file is made on this device and nothing is sent anywhere. It holds your study days, the time, the session length, each day's tasks and the end date (the day before your test); no name, no notes, no scores. Times are "floating", so they stay at the same clock time wherever you are. Open the downloaded file to add it to Google, Apple or Outlook calendar.</p>
           <button type="button" class="btn" id="icsBtn">Add study sessions to my calendar</button>
           <p id="icsMsg" class="muted small" role="status"></p>
@@ -980,37 +1024,46 @@
           ${DAY_ORDER.map(d => `<label class="check-item"><input type="checkbox" name="studyDay" value="${d}" ${(st.studyDays || []).includes(d) ? "checked" : ""}><span>${DAY_NAMES[d]}</span></label>`).join("")}
         </fieldset>
         <label class="field-label" for="studyTimeInput">Usual time of day (optional)</label><input type="time" id="studyTimeInput" value="${escapeHtml(st.studyTime || "")}">
+        <div id="dayTimes" class="field-set">${DAY_ORDER.map(d => `<div class="day-time" data-day="${d}" ${(st.studyDays || []).includes(d) ? "" : "hidden"}><label class="field-label" for="dayTime${d}">${DAY_NAMES[d]} time (optional)</label><input type="time" id="dayTime${d}" value="${escapeHtml((st.studyTimes && st.studyTimes[d]) || "")}"></div>`).join("")}<div class="muted small">Leave a day empty to use the usual time above.</div></div>
         <div class="muted small">Choose when and where you will study (for example, "Mon, Wed, Fri at 7:30 at the kitchen table"). A plan with a set time is easier to keep. My plan uses your days and shows your time.</div>
         <label class="field-label" for="examDateInput">Test date (optional)</label><input type="date" id="examDateInput" value="${escapeHtml(st.examDate)}">
         <div class="cta-row-single"><button class="btn btn-primary" id="saveSettings">Save</button></div>
       </div>
-      <div class="card mt"><h3>Theme</h3>
-        <p class="muted small">Auto follows your device and changes when it does. Your choice is saved in this browser.</p>
-        <div class="seg-wrap" data-theme-switch></div>
-      </div>
+      <p class="muted small mt" id="themeHint">Theme: use the sun, moon or half-circle button in the menu.</p>
+      <div class="card mt install-box" data-install-box hidden></div>
       <div class="card mt"><h3>Practise like the real test</h3>
         <label class="check-row"><input type="checkbox" id="realismToggle" ${st.examRealism ? "checked" : ""}><span class="sw-text">Practise like the real test: hide highlighter, notes and flags</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
         <p class="muted small">Turns off the study aids so practice feels like test day. The question dots stay. The Timed Exam always works this way, whatever this switch says.</p>
         <p id="realismMsg" class="muted small" role="status"></p>
+      </div>
+      <div class="card mt"><h3>Vibrate on tap</h3>
+        ${typeof navigator.vibrate === "function" ? `<label class="check-row"><input type="checkbox" id="vibrateToggle" ${st.vibrate !== false ? "checked" : ""}><span class="sw-text">A light buzz when I pick an answer or flag a question</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
+        <p class="muted small">Works on Android phones. It is never used when your device asks for reduced motion.</p>` : `<p class="muted small">This device cannot vibrate from a web page (iPhones and most computers cannot), so there is nothing to switch.</p>`}
       </div>
       <div class="card mt"><h3>Speaking transcripts</h3>
         <label class="check-row"><input type="checkbox" id="sttToggle" ${st.speechToText ? "checked" : ""}><span class="sw-text">Turn my spoken answers into text after Speaking practice</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
         <p class="muted small">Off unless you switch it on. A transcript lets the app count your words and pace and show what you said. To make it, your browser sends your spoken answer to an online speech service (in Chrome, Google's). Your recording itself stays on this device either way.</p>
         <p id="sttMsg" class="muted small" role="status"></p>
       </div>
-      <div class="card mt"><h3>Your data</h3>
-        <p class="muted">Everything is stored only in this browser. Nothing is sent anywhere unless you switch on Speaking transcripts above: there is no account and no key. Export a backup file now and then; browsers can lose stored data if you clear it.</p>
-        <div class="cta-row-single"><button class="btn" id="exportBtn">Export a backup (JSON file)</button>
-          <label class="btn" for="importFile">Import a backup</label><input type="file" id="importFile" accept="application/json" class="sr-only"><button class="btn" id="resetAll">Reset all data</button></div>
+      <div id="profilesCard"></div>
+      <div id="transferCard"></div>
+      <div class="card mt"><h3 id="dataTitle">Your data: ${escapeHtml(Profiles.active().name)}</h3>
+        <p class="muted">Everything is stored only in this browser, and backup, import and reset below act on the profile named above only. Nothing is sent anywhere unless you switch on Speaking transcripts above: there is no account and no key. Export a backup file now and then; browsers can lose stored data if you clear it.</p>
+        <p id="persistMsg" class="small" role="status"></p>
+        <div class="cta-row-single"><button class="btn" id="exportBtn">Export this profile (JSON file)</button>
+          <label class="btn" for="importFile">Import into this profile</label><input type="file" id="importFile" accept="application/json" class="sr-only"><button class="btn" id="resetAll">Reset this profile</button></div>
         <p id="dataMsg" class="muted small mt" role="status"></p>
       </div>
     `);
+    if (window.AppFeel) { AppFeel.fillInstall(); AppFeel.showPersistState(document.getElementById("persistMsg")); }  // appfeel.js loads after this file, so on a reload it fills these itself
     document.getElementById("targetSlider").oninput = e => document.getElementById("targetVal").textContent = e.target.value;
+    document.querySelectorAll('input[name="studyDay"]').forEach(cb => { cb.onchange = () => { const row = document.querySelector(`.day-time[data-day="${cb.value}"]`); if (row) row.hidden = !cb.checked; }; });   // a day shows its own time box only while ticked
     document.getElementById("hoursSlider").oninput = e => document.getElementById("hoursVal").textContent = e.target.value;
     document.getElementById("saveSettings").onclick = () => {
       Storage.saveSettings({ ...Storage.getSettings(), name: document.getElementById("nameInput").value.trim().slice(0, 60), targetCLB: Math.min(12, Math.max(4, parseInt(document.getElementById("targetSlider").value) || 9)), hoursPerWeek: Math.min(30, Math.max(2, parseInt(document.getElementById("hoursSlider").value) || 8)),
         examDate: /^\d{4}-\d{2}-\d{2}$/.test(document.getElementById("examDateInput").value) ? document.getElementById("examDateInput").value : "", sessionMin: Math.min(240, Math.max(20, parseInt(document.getElementById("sessionInput").value) || 75)),
-        studyDays: Array.from(document.querySelectorAll('input[name="studyDay"]:checked')).map(c => parseInt(c.value)), studyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(document.getElementById("studyTimeInput").value) ? document.getElementById("studyTimeInput").value : "" });
+        studyDays: Array.from(document.querySelectorAll('input[name="studyDay"]:checked')).map(c => parseInt(c.value)), studyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(document.getElementById("studyTimeInput").value) ? document.getElementById("studyTimeInput").value : "",
+        studyTimes: (() => { const o = {}; DAY_ORDER.forEach(d => { const v = document.getElementById("dayTime" + d).value; if (/^([01]\d|2[0-3]):[0-5]\d$/.test(v) && document.querySelector(`input[name="studyDay"][value="${d}"]`).checked) o[d] = v; }); return o; })() });
       navigate("#/dashboard");
       toast("Settings saved");
     };
@@ -1026,25 +1079,31 @@
       document.getElementById("realismMsg").textContent = e.target.checked ? "On. Highlighter, notes and flags are hidden in practice." : "Off. Highlighter, notes and flags are available in practice.";
       toast(e.target.checked ? "Practising like the real test" : "Study aids back on", "info");
     };
+    if (window.ProfileUI) ProfileUI.mountManage(document.getElementById("profilesCard"));
+    if (window.Transfer) Transfer.mountCard(document.getElementById("transferCard"));  // profile-ui.js loads after this file, so on a reload it fills the card itself
+    const vib = document.getElementById("vibrateToggle");
+    if (vib) vib.onchange = e => { Storage.saveSettings({ ...Storage.getSettings(), vibrate: e.target.checked }); toast(e.target.checked ? "Vibration on" : "Vibration off", "info"); };
     document.getElementById("exportBtn").onclick = () => {
-      download("celpip-backup-" + today() + ".json", JSON.stringify(Storage.exportAll(), null, 1), "application/json");
+      AppFeel.exportBackup(); // shared with the Home reminder; also notes the date for the monthly reminder
       document.getElementById("dataMsg").textContent = "Backup file saved to your downloads.";
       toast("Backup exported");
     };
     document.getElementById("importFile").onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
+      // A backup file is typed-in data: refuse anything over 5 MB before reading it (a real backup is far smaller).
+      if (f.size > 5 * 1024 * 1024) { document.getElementById("dataMsg").textContent = "That file is too big to be a backup (over 5 MB)."; toast("That file is too big to be a backup", "error"); e.target.value = ""; return; }
       const r = new FileReader();
       r.onload = () => {
         let obj = null;
         try { obj = JSON.parse(r.result); } catch (x) { obj = null; }
         const good = Storage.importAll(obj), skip = good ? Storage.importSkipped() : 0;
         const note = skip ? "Backup imported; " + skip + " entr" + (skip === 1 ? "y" : "ies") + " skipped" : "Backup imported";
-        document.getElementById("dataMsg").textContent = good ? note + ". Open the dashboard to see it." : "That file could not be read as a backup.";
-        toast(good ? note : "That file could not be read as a backup", good ? "ok" : "error");
+        document.getElementById("dataMsg").textContent = good ? note + ". Open the dashboard to see it." : "That file could not be read as a backup, or this device is full. Nothing was changed.";
+        toast(good ? note : "That file could not be read as a backup, or this device is full", good ? "ok" : "error");
       };
       r.readAsText(f);
     };
-    document.getElementById("resetAll").onclick = () => { if (confirm("This erases all history, notes and settings in this browser. Continue?")) { Storage.resetAll(); render(); toast("All data erased", "info"); } };
+    document.getElementById("resetAll").onclick = () => { if (confirm("This erases all history, notes and settings of the profile \u201C" + Profiles.active().name + "\u201D only. Other profiles on this device are not touched. Continue?")) { Storage.resetAll(); render(); toast("Profile data erased", "info"); } };
   });
 
   // Everything is registered, so draw the first screen.

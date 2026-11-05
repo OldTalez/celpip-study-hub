@@ -296,7 +296,7 @@ function render() {
   const parts = path.split("/").filter(Boolean);
   const top = parts[0] || "dashboard";
   Shell.beforeRender(top);       // ends focus mode, closes the More sheet, marks the current menu item
-  const handler = routes[top];
+  const handler = Object.hasOwn(routes, top) ? routes[top] : null;   // hasOwn: "#/__proto__" or "#/constructor" must not find the plain object's own members
   app.innerHTML = "";
   if (handler) handler(parts.slice(1));
   else routes["dashboard"]([]);
@@ -353,6 +353,22 @@ route("practice", (rest) => {
   `));
 });
 
+// "Resume where you left off?" card (T-031 turn C): shown at the top of a practice screen when js/drafts.js holds a draft for it.
+function draftCard(kind, label, onResume) {
+  const d = Drafts.read(kind);
+  if (!d) return;
+  const when = new Date(d.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const card = el(`<div class="card draft-card" id="draftCard" role="region" aria-label="Unfinished practice">
+    <h2>Resume where you left off?</h2>
+    <p class="muted">${escapeHtml(label(d))} Saved ${escapeHtml(when)}. Drafts stay only on this device.</p>
+    <div class="cta-row-single"><button class="btn btn-primary" id="draftResume" type="button">Resume</button><button class="btn" id="draftFresh" type="button">Start fresh</button></div>
+  </div>`);
+  const back = app.querySelector(".back-link");
+  if (back) back.after(card); else app.prepend(card);
+  document.getElementById("draftResume").onclick = () => onResume(d);
+  document.getElementById("draftFresh").onclick = () => { Drafts.discard(kind); document.getElementById("draftCard").remove(); toast("Draft removed", "info"); };
+}
+
 function renderPracticeSkill(id) {
   const skill = skillById(id);
   if (!skill) return navigate("#/practice");
@@ -372,17 +388,17 @@ function renderMcqPracticeIntro(skill) {
     <p class="muted">${passages.length} passages &middot; ${totalQ} questions in the pool. Every attempt pulls a fresh random selection, so you won't see the same set twice in a row.</p>
     <div class="grid-2">
       <div class="card">
-        <h3>Quick Practice</h3>
+        <h2 class="h3">Quick Practice</h2>
         <p class="muted">1 random passage from any part, ~5 minutes. Great for a daily warm-up.</p>
         <button class="btn btn-primary" id="quickBtn">Start Quick Practice</button>
       </div>
       <div class="card">
-        <h3>Timed Section</h3>
+        <h2 class="h3">Timed Section</h2>
         <p class="muted">One passage per part with a running clock, ${skill.id === "listening" ? "about 47 minutes" : "about 55 minutes"} in total. When time is up the set ends. Good for the weekly timed mini-test.</p>
         <button class="btn" id="timedBtn">Start Timed Section</button>
       </div>
       <div class="card">
-        <h3>Section Mock</h3>
+        <h2 class="h3">Section Mock</h2>
         <p class="muted">One passage per official part (${parts.length} parts), back to back — mirrors the full real ${skill.name} section's variety and length.</p>
         <button class="btn" id="sectionBtn">Start Section Mock</button>
       </div>
@@ -403,6 +419,9 @@ function renderMcqPracticeIntro(skill) {
     </div>
   `));
 
+  draftCard(skill.id, d => `${skill.name} practice, passage ${Math.min(d.pIndex + 1, d.passageIds.length)} of ${d.passageIds.length}${d.timeLimitSec ? ", timed" : ""}.`, d => {
+    runMcqPractice(skill, d.passageIds.map(id => passages.find(p => p.id === id)), d.timeLimitSec ? { timeLimitSec: d.timeLimitSec } : {}, d);
+  });
   document.getElementById("quickBtn").onclick = () => runMcqPractice(skill, sample(passages, 1));
   document.getElementById("timedBtn").onclick = () => {
     const set = parts.map((p, i) => sample(passages.filter(ps => ps.partNum === i + 1), 1)[0]).filter(Boolean);
@@ -423,18 +442,35 @@ function renderMcqPracticeIntro(skill) {
 
 // opts.timeLimitSec turns on a running clock for the whole set (v2). When it reaches zero the passage on screen is
 // checked as it stands and the rest are skipped, like a real timed section.
-function runMcqPractice(skill, passageList, opts = {}) {
-  Shell.focusMode.enter({ name: skill.name + (opts.timeLimitSec ? " timed section" : " practice") });  // menus away, Exit button shown
-  let pIndex = 0;
-  let clock = null, clockLeft = opts.timeLimitSec || 0, timeUp = false;
-  const userAnswers = []; // { passageId, answers: [selectedIndex,...] }
+function runMcqPractice(skill, passageList, opts = {}, resume = null) {
+  Shell.focusMode.enter({ name: skill.name + (opts.timeLimitSec ? " timed section" : " practice"), draft: true });  // menus away, Exit button shown
+  // resume (T-031 turn C) is a cleaned draft from js/drafts.js: where the learner stopped, the answers so far and the time used.
+  let pIndex = resume ? resume.pIndex : 0;
+  let clock = null, clockLeft = resume ? resume.clockLeft : (opts.timeLimitSec || 0), timeUp = false;
+  const userAnswers = resume ? resume.done.map(d => ({ passageId: d.passageId, answers: d.answers, secs: d.secs })) : []; // { passageId, answers: [selectedIndex,...] }
+  let live = null;   // the passage on screen: { qs, form } (null on a review screen)
+  const draft = Drafts.watch(skill.id, () => {
+    const done = userAnswers.map(u => ({ passageId: u.passageId, answers: u.answers, secs: u.secs }));
+    let current = null;
+    if (live) {
+      const p = passageList[pIndex];
+      const answers = p.questions.map((q, i) => { const c = live.form.querySelector(`input[name="q${i}"]:checked`); return c ? parseInt(c.value) : null; });
+      if (!done.length && answers.every(a => a === null)) return null;    // nothing done yet: no draft
+      current = { answers, flags: live.qs.flags.slice(), secs: live.qs.timer.all() };
+    }
+    return { kind: skill.id, passageIds: passageList.map(p => p.id), pIndex: live ? pIndex : done.length, timeLimitSec: opts.timeLimitSec || 0, clockLeft, done, current };
+  });
+  activeTimers.push(draft);   // the router calls stop() on every screen change: that saves the draft one last time
 
   function renderPassage() {
     const passage = passageList[pIndex];
     const answers = new Array(passage.questions.length).fill(null);
+    const back = resume && resume.current && resume.pIndex === pIndex ? resume.current : null;   // first screen after "Resume"
+    resume = null;
     const isListening = skill.id === "listening";
     // Question tools for this passage: the seconds spent per question, and which questions are flagged (js/tools.js).
     const qs = { timer: QTimer(passage.questions.length), flags: new Array(passage.questions.length).fill(false) };
+    if (back) { qs.timer.load(back.secs); qs.flags = back.flags.slice(); }
 
     app.innerHTML = "";
     app.appendChild(el(`
@@ -475,6 +511,8 @@ function runMcqPractice(skill, passageList, opts = {}) {
       </div>
       ${isListening ? "" : `</div></div>`}
     `));
+    if (back) back.answers.forEach((v, i) => { if (v !== null) { const r = document.querySelector(`#qForm input[name="q${i}"][value="${v}"]`); if (r) r.checked = true; } });
+    live = { qs, form: document.getElementById("qForm") };
     // Dots, Flag buttons and the "This question" clock; the answered counter repaints the dots too.
     const qt = mountQuestionTools(document.getElementById("qForm"), qs, { aids: !realismOn(), header: app.querySelector(".run-header") });
     activeTimers.push(qt);  // the router stops it when the screen changes
@@ -503,7 +541,7 @@ function runMcqPractice(skill, passageList, opts = {}) {
     }
 
     if (opts.timeLimitSec && !clock) {
-      clock = Countdown(opts.timeLimitSec, r => { clockLeft = r; paintTimer("mcqTimer", r, opts.timeLimitSec); },
+      clock = Countdown(clockLeft || opts.timeLimitSec, r => { clockLeft = r; paintTimer("mcqTimer", r, opts.timeLimitSec); },
         () => { timeUp = true; document.getElementById("submitPassage") && document.getElementById("submitPassage").click(); });
       clock.start();
     }
@@ -515,20 +553,28 @@ function runMcqPractice(skill, passageList, opts = {}) {
       });
       qt.stop();  // stop counting; the review screen does not count as time on a question
       userAnswers.push({ passageId: passage.id, answers, secs: qs.timer.all() });
-      showReview(passage, answers);
+      live = null;   // on the review screen a saved draft resumes at the NEXT passage
+      showReview(passage, answers, qs.flags);
     };
   }
 
-  function showReview(passage, answers) {
+  // LEARNING NOTE (T-031 turn B): questions the learner flagged for review are listed FIRST on this screen, with a "Flagged" word
+  // (not just a colour or position). Everything else keeps its original order, so the printed question numbers (1., 2., ...) still
+  // match the test. Array.sort is stable in modern browsers: items that compare equal stay in their original order.
+  function showReview(passage, answers, flags) {
+    flags = flags || [];
+    const order = passage.questions.map((q, i) => i).sort((a, b) => (flags[b] ? 1 : 0) - (flags[a] ? 1 : 0));
     if (window.Study) Study.recordMcq(skill.id, passage, answers, "practice");
     const correctCount = passage.questions.filter((q, i) => answers[i] === q.answer).length;
     app.innerHTML = "";
     app.appendChild(el(`
       <h2>${passage.title} — Review</h2>
       <p class="score-line">${correctCount} / ${passage.questions.length} correct</p>
-      ${passage.questions.map((q, qi) => {
+      ${order.map(qi => {
+        const q = passage.questions[qi];
         const correct = answers[qi] === q.answer;
-        return `<div class="question-block review ${correct ? "correct" : "incorrect"}">
+        return `<div class="question-block review ${correct ? "correct" : "incorrect"}${flags[qi] ? " was-flagged" : ""}">
+          ${flags[qi] ? `<p class="flag-label">Flagged</p>` : ""}
           <p class="q-text"><strong>${qi + 1}.</strong> ${escapeHtml(q.q)}</p>
           <div class="options">
             ${q.options.map((opt, oi) => {
@@ -553,6 +599,7 @@ function runMcqPractice(skill, passageList, opts = {}) {
   }
 
   function finishPractice() {
+    draft.finish();   // finished: no draft kept
     if (clock) clock.stop();
     Shell.focusMode.exit();  // the result screen shows the menus again
     let totalCorrect = 0, totalQuestions = 0;
@@ -587,7 +634,7 @@ function runMcqPractice(skill, passageList, opts = {}) {
     `));
   }
 
-  renderPassage();
+  if (pIndex >= passageList.length) finishPractice(); else renderPassage();
 }
 
 // --- Productive practice (writing/speaking) ---
@@ -606,22 +653,23 @@ function renderWritingIntro(skill) {
     <div class="grid-2">
       <div class="card">
         <span class="tag">Task 1</span>
-        <h3>Writing an Email</h3>
+        <h2 class="h3">Writing an Email</h2>
         <p class="muted small">${emailPrompts.length} scenarios &middot; 27 min &middot; 150-200 words</p>
         <button class="btn btn-primary" id="emailBtn" ${emailPrompts.length === 0 ? "disabled" : ""}>Random Email Task</button>
       </div>
       <div class="card">
         <span class="tag">Task 2</span>
-        <h3>Survey Response</h3>
+        <h2 class="h3">Survey Response</h2>
         <p class="muted small">${surveyPrompts.length} scenarios &middot; 26 min &middot; 150-200 words</p>
         <button class="btn btn-primary" id="surveyBtn" ${surveyPrompts.length === 0 ? "disabled" : ""}>Random Survey Task</button>
       </div>
     </div>
-    <h3 class="mt">Or pick a specific scenario</h3>
+    <h2 class="h3 mt">Or pick a specific scenario</h2>
     <div class="scenario-list">
       ${prompts.map(p => `<button class="scenario-item" data-id="${p.id}"><span class="tag">${p.taskType === "email" ? "Email" : "Survey"}</span>${escapeHtml(p.title || p.task)}</button>`).join("")}
     </div>
   `));
+  draftCard("writing", d => `Writing practice, ${wordCount(d.text)} words written, ${fmtTime(d.timeLeftSec)} left.`, d => runWritingTask(skill, prompts.find(p => p.id === d.promptId), false, undefined, d));
   if (emailPrompts.length) document.getElementById("emailBtn").onclick = () => runWritingTask(skill, sample(emailPrompts, 1)[0], false);
   if (surveyPrompts.length) document.getElementById("surveyBtn").onclick = () => runWritingTask(skill, sample(surveyPrompts, 1)[0], false);
   app.querySelectorAll(".scenario-item").forEach(btn => {
@@ -646,7 +694,7 @@ function renderSpeakingIntro(skill) {
         </div>`;
       }).join("")}
       <div class="card">
-        <h3>Surprise Me</h3>
+        <h2 class="h3">Surprise Me</h2>
         <p class="muted">Fully random across all 8 task types.</p>
         <button class="btn" id="randomBtn">Start Random</button>
       </div>
@@ -661,8 +709,8 @@ function renderSpeakingIntro(skill) {
   document.getElementById("randomBtn").onclick = () => runSpeakingTask(skill, sample(prompts, 1)[0], false);
 }
 
-function runWritingTask(skill, prompt, isExam, onComplete) {
-  Shell.focusMode.enter({ name: "Writing practice", exam: isExam });  // inside the exam this keeps the exam's settings
+function runWritingTask(skill, prompt, isExam, onComplete, resume) {
+  Shell.focusMode.enter({ name: "Writing practice", exam: isExam, draft: !isExam });  // inside the exam this keeps the exam's settings
   let timer = null, timeUp = false;
   app.innerHTML = "";
   app.appendChild(el(`
@@ -683,10 +731,19 @@ function runWritingTask(skill, prompt, isExam, onComplete) {
     wcLabel.textContent = `${wc} word${wc === 1 ? "" : "s"} (target ${prompt.wordTarget[0]}-${prompt.wordTarget[1]})`;
     paintWordBar(wc);
   });
-  paintWordBar(0);
+  if (resume) { textarea.value = resume.text; textarea.dispatchEvent(new Event("input")); } else paintWordBar(0);
+  // The Timed Exam never keeps a draft; practice does (js/drafts.js).
+  let draft = null;
+  if (!isExam) {
+    let left = resume ? resume.timeLeftSec : prompt.timeLimitMin * 60;
+    draft = Drafts.watch("writing", () => (textarea.value.trim() ? { promptId: prompt.id, text: textarea.value, timeLeftSec: left } : null));
+    activeTimers.push(draft);
+    textarea.addEventListener("input", () => draft.flush());
+    var setLeft = r => { left = r; };
+  }
 
-  timer = Countdown(prompt.timeLimitMin * 60,
-    remaining => paintTimer("timerDisplay", remaining, prompt.timeLimitMin * 60),
+  timer = Countdown(resume ? resume.timeLeftSec : prompt.timeLimitMin * 60,
+    remaining => { if (draft) setLeft(remaining); paintTimer("timerDisplay", remaining, prompt.timeLimitMin * 60); },
     () => { timeUp = true; submit(); }
   );
   timer.start();
@@ -695,6 +752,7 @@ function runWritingTask(skill, prompt, isExam, onComplete) {
 
   function submit() {
     timer.stop();
+    if (draft) draft.finish();   // handed in: no draft kept
     const text = textarea.value;
     showWritingChecklist(skill, prompt, text, isExam, onComplete);
   }

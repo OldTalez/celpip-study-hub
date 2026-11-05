@@ -7,8 +7,12 @@
 // The "_v1" in the key names lets a future version change the format without colliding with old saved data.
 // v2 keeps the SAME history and settings keys as version 1, so anything saved by the old app still works here.
 const Storage = (() => {
-  const HISTORY_KEY = "celpip_history_v1";
-  const SETTINGS_KEY = "celpip_settings_v1";
+  // LEARNING NOTE (T-031 turn B): several learners can share one device. These two names are the OLD fixed labels; the real label
+  // in localStorage now carries the active learner's id, which js/profiles.js adds (Profiles.key). The label is worked out at the
+  // moment of each read or write (that is why these are small functions), so switching profile changes where everything goes.
+  const HISTORY_KEY_NAME = "celpip_history_v1", SETTINGS_KEY_NAME = "celpip_settings_v1";
+  const histKey = () => Profiles.key(HISTORY_KEY_NAME);
+  const setKey = () => Profiles.key(SETTINGS_KEY_NAME);
 
   // A tiny helper pair so every store reads and writes the same safe way.
   // try/catch: localStorage can be blocked (private window) or hold broken text; we fall back to a default.
@@ -27,14 +31,14 @@ const Storage = (() => {
   // v1 stored an optional AI-grading key in plain text inside the settings. v2 removed that feature, so on load
   // we erase any key that an earlier version left behind. (Plain-text keys in a browser are a security risk.)
   (function removeOldApiKey() {
-    const s = read(SETTINGS_KEY, null);
+    const s = read(setKey(), null);
     if (s && Object.prototype.hasOwnProperty.call(s, "apiKey")) {
       delete s.apiKey;
-      write(SETTINGS_KEY, s);
+      write(setKey(), s);
     }
   })();
 
-  function getHistory() { return read(HISTORY_KEY, []); }
+  function getHistory() { return read(histKey(), []); }
 
   function saveAttempt(attempt) {
     const history = getHistory();
@@ -44,19 +48,19 @@ const Storage = (() => {
     if (window.Study && Study.takeDiagnosticFlag && Study.takeDiagnosticFlag(attempt.skill)) attempt.diagnostic = true;
     // Reading and Listening attempts also carry attempt.timing = { totalSec, perQuestionSec, perPassageSec } (see js/tools.js).
     history.push(attempt);
-    write(HISTORY_KEY, history);
+    write(histKey(), history);
     return attempt;
   }
 
-  function deleteAttempt(id) { write(HISTORY_KEY, getHistory().filter(a => a.id !== id)); }
-  function clearHistory() { try { localStorage.removeItem(HISTORY_KEY); } catch (e) {} }
+  function deleteAttempt(id) { write(histKey(), getHistory().filter(a => a.id !== id)); }
+  function clearHistory() { try { localStorage.removeItem(histKey()); } catch (e) {} }
 
   // Defaults first, then whatever was saved over the top (Object.assign merges them).
   function getSettings() {
-    const defaults = { targetCLB: 9, name: "", hoursPerWeek: 8, examDate: "", sessionMin: 75, speechToText: false, examRealism: false, studyDays: [], studyTime: "" }; // studyDays: preferred weekdays (0 = Sunday ... 6 = Saturday); studyTime: preferred time "HH:MM" or "" (T-030); speechToText: opt-in, sends audio to an online service; examRealism: hide highlighter, notes and flags in Practice
-    return Object.assign({}, defaults, read(SETTINGS_KEY, {}));
+    const defaults = { targetCLB: 9, name: "", hoursPerWeek: 8, examDate: "", sessionMin: 75, speechToText: false, examRealism: false, studyDays: [], studyTime: "", studyTimes: {}, vibrate: true }; // studyDays: preferred weekdays (0 = Sunday ... 6 = Saturday); studyTime: preferred time "HH:MM" or "" (T-030); speechToText: opt-in, sends audio to an online service; examRealism: hide highlighter, notes and flags in Practice
+    return Object.assign({}, defaults, read(setKey(), {}));
   }
-  function saveSettings(settings) { write(SETTINGS_KEY, settings); }
+  function saveSettings(settings) { write(setKey(), settings); }
 
   // ----- v2 study stores. Each one is a plain object or list kept under its own key. -----
   const KEYS = {
@@ -67,12 +71,12 @@ const Storage = (() => {
     log: "celpip_log_v1",             // the study log: date, minutes, skill, notes
     studyTime: "celpip_studytime_v1"  // minutes studied: { days: { "2026-11-05": { reading: 12.5, general: 20 } }, manual: [ added-by-hand entries ] } (T-030)
   };
-  function get(name, fallback) { return read(KEYS[name], fallback); }
-  function set(name, value) { return write(KEYS[name], value); }
+  function get(name, fallback) { return read(Profiles.key(KEYS[name]), fallback); }
+  function set(name, value) { return write(Profiles.key(KEYS[name]), value); }
 
   // Everything the learner owns, for backup/export and for a full reset.
   function exportAll() {
-    const out = { exportedAt: new Date().toISOString(), history: getHistory(), settings: getSettings() };
+    const out = { exportedAt: new Date().toISOString(), profileName: Profiles.active().name, history: getHistory(), settings: getSettings() };
     Object.keys(KEYS).forEach(k => { out[k] = get(k, null); });
     return out;
   }
@@ -81,11 +85,15 @@ const Storage = (() => {
   // ("a_" + digits + "_" + letters/digits), and drop any history entry that is missing what the History screen needs.
   const SKILL_IDS = ["listening", "reading", "writing", "speaking"];
   function num(v, lo, hi, fallback) { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback; }
+  // Copies a parsed object's own fields but leaves out "__proto__", "constructor" and "prototype", so a crafted file cannot use those names
+  // to change how the copy behaves (Object.assign would run the __proto__ setter). Used by every cleaner that keeps unknown fields.
+  const SAFE_FIELD = /^[A-Za-z][A-Za-z0-9_]{0,40}$/;
+  function plain(src) { const o = {}; for (const k of Object.keys(src)) { if (k !== "__proto__" && k !== "constructor" && k !== "prototype" && SAFE_FIELD.test(k)) o[k] = src[k]; } return o; }  // only plain word-like field names are kept: a field called <img src=x onerror=...> is dropped
   function cleanAttempt(h) {
     if (!h || typeof h !== "object" || !/^a_\d{1,16}_[a-z0-9]{1,12}$/.test(String(h.id))) return null;
     if (h.type !== "practice" && h.type !== "exam") return null;
     if (isNaN(new Date(h.date))) return null;
-    const out = Object.assign({}, h);
+    const out = plain(h);
     ["pct", "clb", "overall", "correct", "total", "checklistScore", "checklistTotal"].forEach(k => {
       if (out[k] !== undefined) { const n = num(out[k], 0, 1000, null); if (n === null) delete out[k]; else out[k] = n; }
     });
@@ -93,7 +101,7 @@ const Storage = (() => {
     if (h.type === "exam") {
       if (!h.breakdown || typeof h.breakdown !== "object") return null;
       out.breakdown = {};
-      for (const id of SKILL_IDS) { if (!h.breakdown[id]) return null; out.breakdown[id] = Object.assign({}, h.breakdown[id], { clb: h.breakdown[id].clb === undefined || h.breakdown[id].clb === null ? null : num(h.breakdown[id].clb, 0, 12, null) }); }
+      for (const id of SKILL_IDS) { if (!h.breakdown[id]) return null; out.breakdown[id] = Object.assign(plain(h.breakdown[id]), { clb: h.breakdown[id].clb === undefined || h.breakdown[id].clb === null ? null : num(h.breakdown[id].clb, 0, 12, null) }); }
       out.overall = h.overall === undefined || h.overall === null ? null : num(h.overall, 0, 12, null);
     }
     return out;
@@ -101,7 +109,7 @@ const Storage = (() => {
   // LEARNING NOTE (T-030): the new settings are checked the same way. Preferred days must be whole numbers 0 to 6 (kept once each),
   // the preferred time must look like "07:30", the test date must look like "2026-12-01", and the switches must be true or false.
   function cleanSettings(st) {
-    const out = Object.assign({}, st);
+    const out = plain(st);
     delete out.apiKey;
     if (out.targetCLB !== undefined) out.targetCLB = num(out.targetCLB, 4, 12, 9);
     if (out.hoursPerWeek !== undefined) out.hoursPerWeek = num(out.hoursPerWeek, 2, 30, 8);
@@ -110,7 +118,13 @@ const Storage = (() => {
     if (out.examDate !== undefined) out.examDate = /^\d{4}-\d{2}-\d{2}$/.test(String(out.examDate)) && !isNaN(new Date(out.examDate + "T12:00:00")) ? out.examDate : "";
     if (out.studyDays !== undefined) out.studyDays = Array.isArray(out.studyDays) ? Array.from(new Set(out.studyDays.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))) : [];
     if (out.studyTime !== undefined) out.studyTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(out.studyTime)) ? out.studyTime : "";
-    ["speechToText", "examRealism"].forEach(k => { if (out[k] !== undefined) out[k] = out[k] === true; });
+    // T-031 turn C: studyTimes = a time for single weekdays, { "1": "07:00", "3": "18:30" }. Only weekdays 0 to 6 with a real HH:MM are kept; a day with none uses studyTime.
+    if (out.studyTimes !== undefined) {
+      const clean = {};
+      if (isObj(out.studyTimes)) Object.keys(out.studyTimes).forEach(k => { if (/^[0-6]$/.test(k) && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(out.studyTimes[k]))) clean[k] = out.studyTimes[k]; });
+      out.studyTimes = clean;
+    }
+    ["speechToText", "examRealism", "vibrate"].forEach(k => { if (out[k] !== undefined) out[k] = out[k] === true; });
     return out;
   }
   // The other stores (turn C, after Inyene's review): each is rebuilt entry by entry from known shapes. An entry that does not
@@ -122,7 +136,7 @@ const Storage = (() => {
     const out = {};
     if (!isObj(src)) return out;
     for (const k of Object.keys(src)) {
-      const v = keyOk.test(k) ? valueFn(src[k]) : null;
+      const v = keyOk.test(k) && k !== "__proto__" && k !== "constructor" && k !== "prototype" ? valueFn(src[k]) : null;  // these three names are refused as keys, so a lookup like words[id] can never hit Object's own members
       if (v === null || v === undefined) skipped++; else out[k] = v;
     }
     return out;
@@ -174,25 +188,80 @@ const Storage = (() => {
     return out;
   }
   const CLEANERS = { partStats: cleanPartStats, mistakes: cleanMistakes, vocab: cleanVocab, grammar: cleanGrammar, log: cleanLog, studyTime: cleanStudyTime };
-  function importAll(obj) {
+  // LEARNING NOTE (T-031 turn B): every way data can arrive (a backup file, a QR transfer, a shared file) goes through cleanBundle.
+  // It rebuilds the data field by field with the cleaners above and returns a NEW object; nothing from the outside is stored as it came.
+  // The history list is capped at 5000 entries so a crafted file cannot fill the device.
+  function cleanBundle(obj) {
     skipped = 0;
-    if (!obj || typeof obj !== "object") return false;
-    if (Array.isArray(obj.history)) { const kept = obj.history.map(cleanAttempt).filter(Boolean); skipped += obj.history.length - kept.length; write(HISTORY_KEY, kept); }
-    if (obj.settings && typeof obj.settings === "object") write(SETTINGS_KEY, cleanSettings(obj.settings));
-    Object.keys(KEYS).forEach(k => { if (obj[k] !== undefined && obj[k] !== null) set(k, CLEANERS[k] ? CLEANERS[k](obj[k]) : obj[k]); });
-    return true;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+    // Positive evidence: a real backup has at least one of the keys we write (history, settings or one of the study stores). "{}" or {"a":1} is not a backup.
+    if (!(Array.isArray(obj.history) || isObj(obj.settings) || Object.keys(KEYS).some(k => obj[k] !== undefined && obj[k] !== null))) return null;
+    const out = {};
+    if (Array.isArray(obj.history)) { out.history = obj.history.slice(0, 5000).map(cleanAttempt).filter(Boolean); skipped += obj.history.length - out.history.length; }
+    if (obj.settings && typeof obj.settings === "object" && !Array.isArray(obj.settings)) out.settings = cleanSettings(obj.settings);
+    Object.keys(KEYS).forEach(k => { if (obj[k] !== undefined && obj[k] !== null) out[k] = CLEANERS[k](obj[k]); });  // k comes from KEYS (our own list), never from the file
+    out.profileName = Profiles.cleanName(obj.profileName);
+    return out;
+  }
+  // Writes a cleaned bundle under one learner's labels (id), not necessarily the active one. Answers true only when EVERY write worked
+  // (a full device throws "quota exceeded"; the old code ignored that and showed a success message).
+  function putBundle(id, b) {
+    let ok = true;
+    const w = (legacy, v) => { try { localStorage.setItem(Profiles.keyFor(id, legacy), JSON.stringify(v)); } catch (e) { ok = false; } };
+    if (b.history) w(HISTORY_KEY_NAME, b.history);
+    if (b.settings) w(SETTINGS_KEY_NAME, b.settings);
+    Object.keys(KEYS).forEach(k => { if (b[k] !== undefined) w(KEYS[k], b[k]); });
+    return ok;
+  }
+  // LEARNING NOTE (T-031 turn C): "write safely". Before changing anything we copy what is there (a snapshot). If any write fails,
+  // we put the snapshot back, so a full device never leaves a half-written or empty profile. wipe = true also erases the profile first (Replace).
+  function writeSafely(id, b, wipe) {
+    const snap = Profiles.LEGACY.map(old => { const k = Profiles.keyFor(id, old); let v = null; try { v = localStorage.getItem(k); } catch (e) { v = undefined; } return [k, v]; });   // undefined = could not be read: unknown, so a rollback leaves that key alone
+    if (wipe && snap.some(([, v]) => v === undefined)) return false;   // a note could not even be read: do not erase what cannot be put back
+    if (wipe) Profiles.removeKeys(id);
+    if (putBundle(id, b)) return true;
+    snap.forEach(([k, v]) => { if (v === undefined) return; try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { console.warn("Could not restore " + k, e); } });
+    return false;
+  }
+  // Backup file: keys present in the file replace the active learner's copy; keys missing from the file are left alone. True when saved.
+  function importAll(obj) {
+    const b = cleanBundle(obj);
+    if (!b) return false;
+    return writeSafely(Profiles.activeId, b, false);
+  }
+  // Transfer: "Replace this profile" erases the active learner's data and writes the bundle; if the write fails the old data comes back. True when saved.
+  function replaceActive(obj) {
+    const b = cleanBundle(obj);
+    if (!b) return false;
+    return writeSafely(Profiles.activeId, b, true);
+  }
+  // Transfer: "Add as new profile". Returns the new profile; null when the limit of 8 profiles is reached or the data is not a backup;
+  // false when the device could not store it (the half-made profile is removed again).
+  function addAsProfile(obj) {
+    const b = cleanBundle(obj);
+    if (!b) return null;
+    const p = Profiles.create(b.profileName || (b.settings && b.settings.name) || "Imported");
+    if (p === false) return false;
+    if (!p) return null;
+    if (!putBundle(p.id, b)) { Profiles.remove(p.id); return false; }
+    return p;
+  }
+  // A few counts to show before the learner decides (numbers only, no text from the file). hasData is false when the received
+  // backup holds nothing at all, which is when "Replace" would only erase.
+  function summary(obj) {
+    const b = cleanBundle(obj);
+    if (!b) return null;
+    const st = b.studyTime || { days: {}, manual: [] };
+    const hasData = !!((b.history || []).length || (b.settings && Object.keys(b.settings).length) || Object.keys(b.vocab || {}).length || (b.log || []).length ||
+      Object.keys(b.mistakes || {}).length || Object.keys(b.partStats || {}).length || Object.keys(b.grammar || {}).length || Object.keys(st.days).length || st.manual.length);
+    return { attempts: (b.history || []).length, words: Object.keys(b.vocab || {}).length, notes: (b.log || []).length, name: b.profileName || "", skipped, hasData };
   }
   function importSkipped() { return skipped; } // how many entries the last import left out
-  function resetAll() {
-    try {
-      localStorage.removeItem(HISTORY_KEY);
-      localStorage.removeItem(SETTINGS_KEY);
-      Object.values(KEYS).forEach(k => localStorage.removeItem(k));
-      localStorage.removeItem("celpip_checkin_v1"); // the check-in dismissal date (study.js). Kept out of KEYS on purpose: KEYS are exported and imported, and this date is not data to carry over.
-    } catch (e) {}
-  }
+  // Reset erases the ACTIVE learner's notes only (history, settings, the study stores and the small app notes). Other profiles,
+  // the theme and the sidebar fold are not touched.
+  function resetAll() { Profiles.removeKeys(Profiles.activeId); }
 
-  return { getHistory, saveAttempt, deleteAttempt, clearHistory, getSettings, saveSettings, get, set, exportAll, importAll, importSkipped, resetAll };
+  return { getHistory, saveAttempt, deleteAttempt, clearHistory, getSettings, saveSettings, get, set, exportAll, importAll, cleanBundle, replaceActive, addAsProfile, summary, importSkipped, resetAll };
 })();
 
 // Unofficial CLB estimate from a raw percentage score. For self-study orientation only.

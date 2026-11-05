@@ -49,8 +49,12 @@ const CalendarExport = (() => {
   // Returns { ok:true, text, count, untilDay, usedDefaultTime, time } or { ok:false, error }.
   function buildIcs(input) {
     const { sched, settings, today, now, focusName, tasksFor } = input;
-    const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(settings.studyTime || "")) ? settings.studyTime : DEFAULT_TIME;
-    const [hh, mm] = time.split(":").map(Number);
+    const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+    // each weekday has its own time if given (settings.studyTimes), else the shared time, else the default
+    const timeOf = dow => { const own = settings.studyTimes && Object.prototype.hasOwnProperty.call(settings.studyTimes, String(dow)) ? settings.studyTimes[String(dow)] : ""; return HHMM.test(String(own)) ? own : HHMM.test(String(settings.studyTime || "")) ? settings.studyTime : DEFAULT_TIME; };
+    const ownOrShared = dow => { const o = settings.studyTimes && Object.prototype.hasOwnProperty.call(settings.studyTimes, String(dow)) ? settings.studyTimes[String(dow)] : ""; return HHMM.test(String(o)) || HHMM.test(String(settings.studyTime || "")); };
+    const used = [];
+    let defaulted = false;   // true when some day had no time of its own and no shared time
     const day = s => new Date(s + "T12:00:00");
     const plus = (s, n) => { const d = day(s); d.setDate(d.getDate() + n); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
     // Last day events may start: the day before the test, or 12 weeks ahead.
@@ -61,6 +65,7 @@ const CalendarExport = (() => {
     let count = 0;
     sched.days.forEach(d => {
       // First date: the next day with this weekday, today only if the session time has not passed yet.
+      const time = timeOf(d.dow), [hh, mm] = time.split(":").map(Number);
       let first = today;
       for (let i = 0; i < 8; i++) { first = plus(today, i); if (day(first).getDay() === d.dow && !(i === 0 && time <= hhmmNow)) break; }
       if (first > untilDay) return; // the test is too close for a session on this weekday
@@ -79,11 +84,11 @@ const CalendarExport = (() => {
         "DESCRIPTION:" + escapeText(desc),
         "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + escapeText("CELPIP study in " + ALARM_MIN + " minutes"), "TRIGGER:-PT" + ALARM_MIN + "M", "END:VALARM",
         "END:VEVENT");
-      count++;
+      count++; used.push(time); if (!ownOrShared(d.dow)) defaulted = true;
     });
     if (!count) return { ok: false, error: "There is no planned study day before your test date, so there is nothing to add." };
     lines.push("END:VCALENDAR");
-    return { ok: true, text: lines.map(foldLine).join("\r\n") + "\r\n", count, untilDay, time, usedDefaultTime: time !== settings.studyTime };
+    return { ok: true, text: lines.map(foldLine).join("\r\n") + "\r\n", count, untilDay, time: used.every(x => x === used[0]) ? used[0] : "a time for each day", times: used, usedDefaultTime: defaulted };
   }
 
   const api = { buildIcs, escapeText, foldLine, DEFAULT_TIME, ALARM_MIN, DEFAULT_WEEKS };

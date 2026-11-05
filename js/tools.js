@@ -1,7 +1,7 @@
 /*
  * LEARNING NOTE (for beginners): this file holds the "practice tools", the small helpers that sit on top of the question
  * screens. Added 2026-11-05 (T-029 turn B, Agent: Nsikak). They follow Company/Work/2026-11-05 T-029 celpip-identity/
- * interaction-standard.md. Read it in this order:
+ * interaction-standard.md. T-031 turn A (2026-11-05): toast() can take a button ({ action: { label, onClick } }); such a toast stays until used (the update notice). Read it in this order:
  *   1. toast()            a small "Saved" message that fades away by itself
  *   2. realismOn()        the one yes/no question "should the study aids be hidden?" (Settings switch, always yes in the exam)
  *   3. QTimer             counts how many seconds you spend on each question
@@ -33,7 +33,8 @@ const Toast = (() => {
     const gone = () => { if (t.parentNode) t.parentNode.removeChild(t); if (node === t) node = null; };
     if (quick) gone(); else setTimeout(gone, 200);
   }
-  function show(message, kind) {
+  // opts (optional): { action: { label, onClick } } adds a button, and the toast then stays until it is used or replaced (the "New version ready" notice).
+  function show(message, kind, opts) {
     const host = document.getElementById("toastHost");
     if (!host) return;
     kind = kind === "error" || kind === "info" ? kind : "ok";
@@ -47,6 +48,14 @@ const Toast = (() => {
     const words = document.createElement("span");
     words.textContent = String(message);  // textContent: shown as plain text
     t.append(icon, words);
+    const act = opts && opts.action;
+    if (act) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "btn btn-sm btn-quiet"; b.textContent = String(act.label);
+      b.onclick = () => { act.onClick(); };
+      t.appendChild(b);
+      t.dataset.sticky = "1";
+    }
     if (kind === "error") {
       const x = document.createElement("button");
       x.type = "button"; x.className = "btn btn-sm btn-quiet"; x.textContent = "Dismiss";
@@ -57,7 +66,7 @@ const Toast = (() => {
     node = t; madeAt = performance.now();
     void t.offsetWidth;  // lets the browser see the starting look before the "show" class starts the fade-in
     t.classList.add("show");
-    if (kind !== "error") {
+    if (kind !== "error" && !act) {
       const start = ms => { clearTimeout(timer); timer = setTimeout(() => remove(t, false), ms); };
       start(SHOW_MS);
       t.addEventListener("mouseenter", () => clearTimeout(timer));
@@ -68,10 +77,10 @@ const Toast = (() => {
   }
   // Called by render() on every screen change: a toast left over from the screen before goes at once. One made in the last
   // moment (for example "Settings saved", raised just as the page changes) is kept so the learner still sees it.
-  function clear() { if (node && performance.now() - madeAt > CARRY_MS) remove(node, true); }
+  function clear() { if (node && !node.dataset.sticky && performance.now() - madeAt > CARRY_MS) remove(node, true); }
   return { show, clear };
 })();
-function toast(message, kind) { Toast.show(message, kind); }
+function toast(message, kind, opts) { Toast.show(message, kind, opts); }
 
 // ---------- 2. "Practise like the real test" ----------
 // ONE constant (Utibe's recommendation; the Board has not confirmed it yet): in the Timed Exam the study aids are always
@@ -106,6 +115,7 @@ function QTimer(n) {
     release() { if (wanted && since === null) since = Date.now(); },    // tab visible again
     enter(i) { if (i === cur || i < 0 || i >= n) return; flush(); cur = i; },
     get current() { return cur; },
+    load(arr) { arr.forEach((v, i) => { if (i < n && Number.isFinite(v)) secs[i] = v; }); },   // put back seconds saved in a draft
     seconds(i) { flush(); return secs[i]; },
     all() { flush(); return secs.map(s => Math.round(s)); }             // whole seconds, one per question
   };

@@ -24,7 +24,7 @@ const Shell = (function () {
     // Screens that live under the "More" tab on a phone.
     moreSections: ["learn", "vocab", "grammar", "notes", "plan", "history", "settings"],
     // Sections that light up another menu item (the diagnostic belongs to Practice).
-    sectionAlias: { diagnostic: "practice" },
+    sectionAlias: { diagnostic: "practice", transfer: "settings" },
     scrollShrinkPx: 24,                 // after this much scrolling the screen bar shrinks (wide screens)
     topbarHidePx: 8                     // on a phone, scrolling down more than this hides the top bar
   };
@@ -125,7 +125,7 @@ const Shell = (function () {
   // Sidebar, bottom tabs and the More sheet all carry data-section. The current one gets aria-current="page"
   // (what a screen reader announces) plus the .active class; the CSS also adds a bar, bold text or a pill so it is not colour alone.
   function syncNav(section) {
-    const sec = SETTINGS.sectionAlias[section] || section;
+    const sec = (Object.hasOwn(SETTINGS.sectionAlias, section) && SETTINGS.sectionAlias[section]) || section;   // hasOwn: a URL word like "constructor" is not an alias
     document.querySelectorAll("[data-section]").forEach(a => {
       const on = a.dataset.section === sec;
       a.classList.toggle("active", on);
@@ -179,7 +179,7 @@ const Shell = (function () {
   // ---------- Focus mode ----------
   // During a practice run or the Timed Exam the menus go away so nothing distracts, and a small task bar with an Exit
   // button appears. render() in app.js calls exit() before drawing any new screen, so leaving by any route ends it.
-  const focusState = { on: false, kind: "", back: "#/dashboard" };
+  const focusState = { on: false, kind: "", back: "#/dashboard", draft: false };
   const focusMode = {
     // opts: { name: "Reading practice", exam: true|false, back: "#/practice/reading" }
     enter(opts) {
@@ -188,6 +188,7 @@ const Shell = (function () {
       if (focusState.on && focusState.kind === "exam") return;
       focusState.on = true;
       focusState.kind = opts.exam ? "exam" : "practice";
+      focusState.draft = !!opts.draft;   // true when leaving keeps a draft (Reading, Listening, Writing practice)
       focusState.back = opts.back || (window.location.hash || "#/dashboard");
       document.body.setAttribute("data-mode", "focus");
       document.getElementById("taskName").textContent = opts.name || "Practice";
@@ -206,10 +207,12 @@ const Shell = (function () {
     async ask() {
       if (!focusState.on || document.querySelector("dialog[open]")) return;
       const exam = focusState.kind === "exam";
+      if (!exam && focusState.draft && typeof Drafts !== "undefined") Drafts.flushNow();   // save first, so the words below are true
+      const kept = focusState.draft && !(typeof Drafts !== "undefined" && Drafts.failed());
       const exit = document.getElementById("exitBtn");  // staying puts focus back on Exit, even when Esc opened the question
       const leave = await confirmLeave(exam
-        ? { title: "Leave the exam?", message: "This attempt will not be saved, and you cannot pick it up again. Leave the exam?", returnTo: exit }
-        : { title: "Leave this practice?", message: "Your answers on this screen will be lost, and nothing is saved to your history. Leave this practice?", returnTo: exit });
+        ? { title: "Leave the exam?", message: "The Timed Exam does not keep a draft: this attempt will not be saved and you cannot pick it up again. Leave the exam?", returnTo: exit }
+        : { title: "Leave this practice?", message: kept ? "Your answers are kept as a draft, so you can resume where you left off. Drafts stay only on this device. Nothing is saved to your history until you finish. Leave this practice?" : "Your answers on this screen will be lost, and nothing is saved to your history. Leave this practice?", returnTo: exit });
       if (!leave) return;
       const back = exam ? "#/exam" : focusState.back;
       focusMode.exit();

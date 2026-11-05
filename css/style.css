@@ -1,5 +1,6 @@
 /*
  * LEARNING NOTE (for beginners): CSS controls how the page looks.
+ * T-031 turn A (2026-11-05): section 9 at the end holds the install box, offline pill and phone mastery grid; bars use env(safe-area-inset-*) to clear the iPhone notch and home bar.
  * Each rule looks like:  selector { property: value; }  (the selector says WHAT to style).
  * The :root block below defines named values ("variables" or "tokens") such as --accent. Elsewhere they are used as
  * var(--accent), so changing a colour here changes it everywhere. Two themes: the first block holds the light values and
@@ -98,11 +99,11 @@ html[data-theme="dark"] {
 
 /* ---------- 3. Base ---------- */
 * { box-sizing: border-box; }
-html { --bar-h: 64px; /* height of the sticky screen bar (wide) or top bar (phone); scroll-padding follows it */ }
+html { --bar-h: calc(64px + env(safe-area-inset-top, 0px)); /* height of the sticky screen bar (wide) or top bar (phone); scroll-padding follows it */ }
 html { font-size: 100%; scroll-padding-top: calc(var(--bar-h) + 12px); } /* anchor jumps and focus never land under the sticky bar */
-html[data-scrolled="1"] { --bar-h: 48px; }
-html:has(body[data-mode="focus"]) { --bar-h: 60px; } /* the task bar height */
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+html[data-scrolled="1"] { --bar-h: calc(48px + env(safe-area-inset-top, 0px)); }
+html:has(body[data-mode="focus"]) { --bar-h: calc(60px + env(safe-area-inset-top, 0px)); } /* the task bar height */
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); overscroll-behavior-y: contain; } /* a drag down at the top of the page does not pull-to-refresh, so a swipe cannot reload the app in the middle of an exam */
 body { font: 1.0625rem/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 /* tabular-nums: digits share one width, so columns and counting timers do not jiggle. Only used where numbers line up or change:
    in Atkinson Hyperlegible the tabular zero is slashed, which looks odd inside running text. */
@@ -170,14 +171,14 @@ nav#mainNav a[aria-current="page"]::before { transform: scaleY(1); }
 }
 
 /* Top bar (phone): brand and theme button; hides when you scroll down, returns on any scroll up. */
-.topbar { position: sticky; top: 0; z-index: 20; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 var(--gut); background: var(--bg); transition: transform var(--dur-3) var(--ease-io); }
+.topbar { position: sticky; top: 0; z-index: 20; height: calc(56px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: env(safe-area-inset-top, 0px) max(var(--gut), env(safe-area-inset-right, 0px)) 0 max(var(--gut), env(safe-area-inset-left, 0px)); background: var(--bg); transition: transform var(--dur-3) var(--ease-io); }
 body[data-topbar="hidden"] .topbar { transform: translateY(-100%); }
 .icon-btn { min-width: 44px; min-height: 44px; border: 0; background: var(--surface-2); color: var(--text); border-radius: var(--radius-btn); cursor: pointer; display: inline-grid; place-items: center; transition: background-color var(--dur-2) var(--ease-io), transform var(--dur-1) var(--ease-out); }
 .icon-btn:active { transform: scale(.97); }
 @media (hover: hover) { .icon-btn:hover { background: color-mix(in srgb, var(--surface-2), var(--text) 8%); } }
 
 /* Bottom tab bar (phone): 5 items, at least 56px tall. Selected = pill behind the icon + bold label + aria-current. */
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); transition: transform var(--dur-4) var(--ease-io), opacity var(--dur-4) var(--ease-io), visibility var(--dur-4); }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); padding: 6px max(4px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(4px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); transition: transform var(--dur-4) var(--ease-io), opacity var(--dur-4) var(--ease-io), visibility var(--dur-4); }
 .tabbar a, .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; border: 0; background: none; padding: 0; color: var(--muted); font: 700 .8125rem var(--font); text-decoration: none; cursor: pointer; border-radius: 12px; }
 .tabbar a:focus-visible, .tabbar button:focus-visible { outline-offset: -3px; }
 .tabbar .pill { width: 56px; height: 30px; border-radius: var(--radius-btn); display: grid; place-items: center; transition: background-color var(--dur-3) var(--ease-io), color var(--dur-3) var(--ease-io), transform var(--dur-1) var(--ease-out); }
@@ -203,7 +204,7 @@ dialog::backdrop { background: var(--backdrop); }
 .sheet .seg-wrap { padding: 8px 20px 4px; }
 
 /* Focus-mode task bar: appears when a practice run or the Timed Exam starts. Never hides (the timer must stay visible). */
-.taskbar { display: none; position: sticky; top: 0; z-index: 40; height: 60px; align-items: center; gap: 12px; padding: 0 var(--gut); background: var(--bg); border-bottom: 1px solid var(--line); }
+.taskbar { display: none; position: sticky; top: 0; z-index: 40; height: calc(60px + env(safe-area-inset-top, 0px)); align-items: center; gap: 12px; padding: env(safe-area-inset-top, 0px) max(var(--gut), env(safe-area-inset-right, 0px)) 0 max(var(--gut), env(safe-area-inset-left, 0px)); background: var(--bg); border-bottom: 1px solid var(--line); }
 body[data-mode="focus"] .taskbar { display: flex; animation: chrome-in var(--dur-4) var(--ease-out) both; }
 .taskbar .task-name { font: var(--heading-weight) 1.0625rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes chrome-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
@@ -232,21 +233,22 @@ body[data-mode="focus"] .taskbar { display: flex; animation: chrome-in var(--dur
   .only-wide { display: none; }
   html { --bar-h: 56px; }
   html[data-scrolled="1"] { --bar-h: 56px; }
-  html:has(body[data-mode="focus"]) { --bar-h: 60px; }
+  html:has(body[data-mode="focus"]) { --bar-h: calc(60px + env(safe-area-inset-top, 0px)); }
   body[data-mode="focus"] .topbar { display: none; }
   body[data-mode="focus"] .tabbar { transform: translateY(100%); opacity: 0; visibility: hidden; }
   .app-footer { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
   body[data-mode="focus"] .app-footer { padding-bottom: 3rem; }
 }
 
-main#app { max-width: 1120px; margin: 0 auto; padding: 1.5rem var(--gut) 3rem; }
+main#app { max-width: 1120px; margin: 0 auto; padding: 1.5rem var(--gut) 3rem; min-height: 70vh; } /* T-031 C: keeps the footer from jumping down when a screen is drawn (Lighthouse layout shift) */
+.content:has(main#app:empty) .app-footer { visibility: hidden; } /* not drawn until the first screen exists, so it cannot be seen jumping down */
 .app-footer { max-width: 1120px; margin: 0 auto; padding: 1rem var(--gut) 3rem; color: var(--muted); font-size: .9375rem; border-top: 1px solid var(--line); }
 
 /* ---------- 5. Type and layout blocks ---------- */
 h1, h2, h3, h4 { font-family: var(--serif); font-weight: var(--heading-weight); letter-spacing: -.02em; }
 h1 { font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem); line-height: 1.1; margin: 0 0 .6rem; }
 h2 { font-size: clamp(1.35rem, 1.1rem + 1vw, 1.7rem); line-height: 1.15; margin: 0 0 .6rem; }
-h3 { font-size: 1.125rem; line-height: 1.25; margin: 0 0 .4rem; font-weight: 700; }
+h3, .h3 { font-size: 1.125rem; line-height: 1.25; margin: 0 0 .4rem; font-weight: 700; }
 h4 { font-size: 1rem; margin: 0 0 .3rem; font-weight: 700; }
 p { margin: 0 0 .8rem; max-width: 70ch; }
 .muted { color: var(--muted); }
@@ -561,7 +563,7 @@ mark.has-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 
 
 /* Toast: the inverse colours (--bg text on a --text panel) with an icon and words. One at a time. Bottom-left of the
    content on wide screens; on phones above the tab bar (or near the bottom while a run hides the tabs). */
-.toast-host { position: fixed; z-index: 70; left: var(--gut); bottom: 16px; right: var(--gut); display: flex; justify-content: flex-start; pointer-events: none; }
+.toast-host { position: fixed; z-index: 70; left: var(--gut); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: var(--gut); display: flex; justify-content: flex-start; pointer-events: none; }
 body:not([data-mode="focus"]) .toast-host { bottom: calc(76px + env(safe-area-inset-bottom)); }
 @media (min-width: 1000px) { body:not([data-mode="focus"]) .toast-host { left: calc(var(--side-w) + var(--gut)); bottom: 16px; } }
 .toast { pointer-events: auto; display: inline-flex; align-items: center; gap: .6rem; max-width: 100%; padding: .7rem 1rem; border-radius: min(var(--radius), 14px); background: var(--text); color: var(--bg); font-weight: 700; box-shadow: var(--shadow-float); opacity: 0; transform: translateY(12px); transition: opacity var(--dur-2) var(--ease-in), transform var(--dur-2) var(--ease-in); }
@@ -647,6 +649,8 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .pace-row { display: flex; align-items: flex-end; gap: 1rem; }
 .pace-row p { margin: 0 0 .3rem; }
 .pace-unit { font-size: 1.2rem; margin-left: 2px; }
+.pace-parts { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .25rem; }
+.pace-parts li { display: flex; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 .pace-status { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
 .pace-ico { width: 1.25rem; height: 1.25rem; flex: none; background: currentColor; -webkit-mask: var(--i-check) center / contain no-repeat; mask: var(--i-check) center / contain no-repeat; }
 .pace-status.slow .pace-ico { -webkit-mask-image: var(--i-alert); mask-image: var(--i-alert); }
@@ -688,3 +692,69 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .plan-add-wrap { margin: .75rem 0; }
 .plan-add-wrap > summary { min-height: 44px; display: flex; align-items: center; font-weight: 700; }
 @media (max-width: 960px) { .bento .tile-plan { grid-column: 1 / -1; } }
+
+/* ---------- 9. App feel (T-031 turn A): install box, offline label, backup reminder, mastery grid on phones ---------- */
+[data-install-box][hidden], .offline-pill[hidden] { display: none; }
+.install-steps { margin: .5rem 0 0; padding-left: 1.4rem; }
+.install-steps li { margin: .4rem 0; }
+.share-ico, .btn-ico { width: 1.35em; height: 1.35em; vertical-align: -.3em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn-ico { margin-right: .4rem; }
+.sheet .install-box { padding-top: 0; }
+/* The offline label is a pill with an icon AND the word, so it never relies on colour. The one-line explanation shows in the sidebar and is read aloud elsewhere. */
+.offline-pill { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .1rem .4rem; margin: 0; padding: .25rem .7rem; border: 1.5px solid var(--ctl); border-radius: var(--radius-btn); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: .875rem; }
+.offline-pill .btn-ico { margin: 0; }
+.offline-note { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.sidebar .offline-pill { align-self: flex-start; margin: .5rem 10px 0; border-radius: 14px; }
+.sidebar .offline-note { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; flex-basis: 100%; font-weight: 400; font-size: .8rem; color: var(--muted); }
+.backup-note .cta-row-single { display: flex; flex-wrap: wrap; gap: .6rem; }
+[data-persist-state="no"]::before, [data-persist-state="yes"]::before { font-weight: 800; margin-right: .4rem; }
+[data-persist-state="yes"]::before { content: "\2713"; }
+[data-persist-state="no"]::before { content: "!"; }
+/* Mastery grid: each cell stays at least 44 x 44 px. On a narrow phone the table keeps its width and slides sideways INSIDE the tile, never the page. */
+.mastery-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.mg-cell { min-width: 44px; min-height: 48px; }
+@media (max-width: 480px) { .mastery { min-width: calc(3.8rem + 6 * 48px + 2px); } }
+
+/* T-031 turn B: "Flagged" label on a question in the review screen (a word plus a flag shape; colour is never the only signal). */
+.flag-label { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 6px; font-weight: 700; font-size: 0.85rem; color: var(--accent); }
+.flag-label::before { content: ""; width: 1em; height: 1em; background: currentColor; -webkit-mask: var(--i-flag) center / contain no-repeat; mask: var(--i-flag) center / contain no-repeat; }
+
+/* T-031 turn B: keyboard-shortcut button (only where a mouse or keyboard is the main input) and the shortcut list. */
+.kbd-only { display: none; margin: 8px 12px; }
+@media (hover: hover) and (pointer: fine) { .kbd-only { display: inline-flex; } }
+.kbd-list { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 12px 0 0; }
+.kbd-list dt { font-weight: 700; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+.kbd-list dd { margin: 0; }
+
+/* T-031 turn B: profiles. The avatar is a round initial; the name always shows too, so colour is never the only signal. */
+.avatar { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-fill); color: var(--accent-ink); font-weight: 700; font-size: .95rem; }
+.profile-wrap { padding: 0 4px 12px; }
+.sheet .profile-wrap { padding: 4px 20px 8px; }
+.profile-btn { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius, 12px); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.profile-btn:hover { background: var(--hover, var(--surface)); }
+.profile-label { display: flex; flex-direction: column; min-width: 0; }
+.profile-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-dlg ul, .prof-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.who-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 12px; border: 2px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.who-item[aria-current="true"] { border-color: var(--accent); }
+.who-name { font-weight: 700; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.who-add-row, .prof-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.who-add-row .field-label, .prof-add .field-label { flex-basis: 100%; margin: 0; }
+.who-add-row input, .prof-add input { flex: 1; min-width: 140px; }
+.who-msg { flex-basis: 100%; margin: 0; }
+.prof-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 48px; }
+.prof-name { font-weight: 700; flex: 1; min-width: 100px; overflow-wrap: anywhere; }
+.prof-row input { flex: 1; min-width: 120px; }
+.ask-dlg { max-width: min(92vw, 28rem); }
+.btn-danger { border-color: var(--bad); color: var(--bad); }
+
+/* T-031 turn B: QR transfer screens. The code is always black on white (a code needs strong contrast whatever the theme). */
+.qr-box { display: grid; gap: 12px; justify-items: center; text-align: center; }
+.qr-canvas { width: min(100%, 420px); height: auto; aspect-ratio: 1; image-rendering: pixelated; background: #fff; border: 8px solid #fff; border-radius: 4px; }
+.qr-video { width: min(100%, 420px); border-radius: 12px; background: #000; }
+.qr-progress { width: min(100%, 420px); height: 12px; accent-color: var(--accent); }
+.qr-status { font-weight: 700; margin: 0; }
+.qr-ctrl { justify-content: center; align-items: center; }
+.qr-ctrl select { min-height: 44px; }
+.kbd-only { text-align: left; }
+.qr-box [hidden], .who-dlg [hidden] { display: none !important; }

@@ -280,11 +280,20 @@ const Prescription = (() => {
     return { overall: judge(expected, done.total), skills };
   }
   // The next planned session at or after "now" (a Date): { date, dow, focus, minutes, time (HH:MM or ""), daysAway }, or null.
-  function nextSession(sched, timeStr, now) {
+  // The time for one weekday (T-031 turn C): its own time if the learner gave one, else the shared "usual time", else "".
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  function timeFor(settings, dow) {
+    const own = settings && settings.studyTimes && Object.prototype.hasOwnProperty.call(settings.studyTimes, String(dow)) ? settings.studyTimes[String(dow)] : "";
+    if (HHMM.test(String(own))) return own;
+    return settings && HHMM.test(String(settings.studyTime || "")) ? settings.studyTime : "";
+  }
+  // timeOf is either one "HH:MM" string (the old way) or a function from weekday number to a time.
+  function nextSession(sched, timeOf, now) {
     const t = ymd(now), hhmm = pad(now.getHours()) + ":" + pad(now.getMinutes());
     for (let i = 0; i <= 7; i++) {
       const date = addDays(t, i), dow = parseDay(date).getDay(), d = sched.days.find(x => x.dow === dow);
       if (!d) continue;
+      const timeStr = typeof timeOf === "function" ? timeOf(dow) : timeOf;
       if (i === 0 && timeStr && hhmm >= timeStr) continue; // today's session time has passed
       return { date, dow, focus: d.focus, minutes: d.minutes, time: timeStr || "", daysAway: i };
     }
@@ -325,7 +334,7 @@ const Prescription = (() => {
     return { kind: "many", missed, catchUp, extraMin: each * catchUp.length };
   }
 
-  const api = { niceHours, onTrack, nextSession, checkIn, expectedSoFar, ON_TRACK_MIN_RATIO, LITTLE_BEHIND_MIN_RATIO, SKILL_MIN_EXPECTED, CHECKIN_LOOKBACK_DAYS, CHECKIN_RESET_AT, CATCHUP_MAX_DAYS, CATCHUP_MAX_EXTRA, parseDay, ymd, SKILL_IDS, HOURS_PER_STEP, HOURS_PER_STEP_RANGE, MIN_STUDY_DAYS, MIN_WEEKLY_HOURS, BLOCK_MIN, BLOCK_MAX, WEIGHT_OFFSET, SKILL_FLOOR, RETRIEVAL_MIN_SHARE, REREAD_MAX_SHARE,
+  const api = { niceHours, onTrack, nextSession, timeFor, checkIn, expectedSoFar, ON_TRACK_MIN_RATIO, LITTLE_BEHIND_MIN_RATIO, SKILL_MIN_EXPECTED, CHECKIN_LOOKBACK_DAYS, CHECKIN_RESET_AT, CATCHUP_MAX_DAYS, CATCHUP_MAX_EXTRA, parseDay, ymd, SKILL_IDS, HOURS_PER_STEP, HOURS_PER_STEP_RANGE, MIN_STUDY_DAYS, MIN_WEEKLY_HOURS, BLOCK_MIN, BLOCK_MAX, WEIGHT_OFFSET, SKILL_FLOOR, RETRIEVAL_MIN_SHARE, REREAD_MAX_SHARE,
     REVIEW_FRACTION, LABEL, LOW_CONFIDENCE_FROM, LOW_CONFIDENCE_TO, cleanDays, weekStart, weeksLeft, skillShares, weeklyMinutes, schedule, todayTasks, reviewSpacing, mockPlan, projection, milestones, weekDone, addDays, isDay };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   return api;
