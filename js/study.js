@@ -9,6 +9,11 @@
  * Key idea, "spaced review": a question you get wrong comes back after 1 day, then 3, 7, 14, 30 and 60 days as you keep getting it right.
  * This is called the Leitner method: each question sits in a "box" (0 to 6) and moves up when answered correctly or back to box 0 when wrong.
  * Everything is stored in this browser through Storage (js/storage.js); nothing is sent anywhere.
+ * T-029 turn C (2026-11-05): the dashboard gained a radar chart (radarTile), a pace tile (paceTile, one constant PACE_GUIDE_SEC)
+ * and a mastery grid by part (masteryTile), all hand-drawn or plain HTML, no chart library.
+ * T-029 turn A (2026-11-05): the Learn screens got a contents list ("On this page", built by Shell.contents in js/shell.js),
+ * Settings got the Light / Dark / Auto theme switch and a visible On/Off word on the transcripts switch, and the old
+ * header theme button code was removed (js/shell.js owns the theme now).
  */
 (function () {
   "use strict";
@@ -207,6 +212,97 @@
   }
 
   // ================= DASHBOARD =================
+
+  // ---------- Dashboard tiles added in turn C: radar chart, pace, mastery grid ----------
+  // LEARNING NOTE: a radar chart draws one "arm" per skill from the middle outwards; the longer the arm, the higher the
+  // level. Joining the four arm tips gives a shape, so you see at a glance which skill is the short one. We draw it by hand
+  // in SVG (no chart library). Rings mark levels 3, 6, 9 and 12. Colour is never the only signal: the latest shape is a solid
+  // line with dots, the target is a dashed line, and every arm prints its number.
+  const RADAR_ORDER = ["listening", "reading", "writing", "speaking"]; // top, right, bottom, left: fixed so the shape is learnt
+  function latestFor(history, skillId) {
+    const list = history
+      .filter(h => (h.type === "practice" && h.skill === skillId) || (h.type === "exam" && h.breakdown && h.breakdown[skillId]))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (!list.length) return { clb: null, date: null };
+    const last = list[list.length - 1];
+    return { clb: last.type === "exam" ? last.breakdown[skillId].clb : last.clb, date: last.date };
+  }
+  function radarTile(history, target) {
+    const rows = RADAR_ORDER.map(id => Object.assign({ id, name: SKILL_NAMES[id] }, latestFor(history, id)));
+    if (rows.every(r => r.clb === null)) return `<h2>Skills at a glance</h2><p class="muted">No results yet. Take a practice test to fill this chart.</p>`;
+    const cx = 180, cy = 146, R = 90;
+    const dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // unit vector of each arm: up, right, down, left
+    const pt = (i, v) => [cx + dir[i][0] * R * v / 12, cy + dir[i][1] * R * v / 12];
+    const poly = f => rows.map((r, i) => pt(i, f(r)).map(n => n.toFixed(1)).join(",")).join(" ");
+    let svg = "";
+    [3, 6, 9, 12].forEach(v => { svg += `<polygon class="rd-ring" points="${poly(() => v)}"/><text class="rd-ringn" x="${cx + 4}" y="${(cy - R * v / 12 - 2).toFixed(1)}">${v}</text>`; });
+    rows.forEach((r, i) => { const [x, y] = pt(i, 12); svg += `<line class="rd-axis" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}"/>`; });
+    if (target) svg += `<polygon class="rd-target" points="${poly(() => target)}"/>`;
+    svg += `<polygon class="rd-now" points="${poly(r => r.clb || 0)}"/>`;
+    rows.forEach((r, i) => { const [x, y] = pt(i, r.clb || 0); svg += `<circle class="rd-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5"/>`; });
+    // Labels: the name, then the number (or "no score") on the line under it, at the end of each arm.
+    const lab = [[cx, 18, "middle"], [cx + R + 14, cy - 4, "start"], [cx, cy + R + 28, "middle"], [cx - R - 14, cy - 4, "end"]];
+    rows.forEach((r, i) => {
+      const [x, y, a] = lab[i];
+      svg += `<text class="rd-name" x="${x}" y="${y}" text-anchor="${a}">${r.name}</text>` +
+        (r.clb === null ? `<text class="rd-none" x="${x}" y="${y + 20}" text-anchor="${a}">no score</text>` : `<text class="rd-num" x="${x}" y="${y + 22}" text-anchor="${a}">${r.clb}</text>`);
+    });
+    const say = rows.map(r => r.name + " " + (r.clb === null ? "no score yet, drawn at 0" : r.clb)).join(", ");
+    const aria = `Radar chart of your latest level in each skill out of 12: ${say}. Target ${target} in every skill. The table below the chart gives the same numbers.`;
+    const scored = rows.filter(r => r.clb !== null).sort((a, b) => a.clb - b.clb);
+    const none = rows.filter(r => r.clb === null);
+    const caption = none.length ? `${none.map(r => r.name).join(" and ")} ${none.length > 1 ? "have" : "has"} no score yet; the target is ${target}.`
+      : `${scored[0].name} is the lowest at level ${scored[0].clb}; the target is ${target}.`;
+    const trs = rows.map(r => `<tr><th scope="row">${r.name}</th><td>${r.clb === null ? "no score" : r.clb}</td><td>${target}</td><td>${r.clb === null ? "n/a" : (r.clb >= target ? "at or above target" : (target - r.clb) + " to go")}</td><td>${r.date ? fmtDate(r.date) : "n/a"}</td></tr>`).join("");
+    return `<h2>Skills at a glance</h2>
+      <svg class="radar" viewBox="0 0 360 290" role="img" aria-label="${aria}">${svg}</svg>
+      <ul class="radar-key"><li><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--accent)" stroke-width="3"/></svg> Latest level</li><li><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--text)" stroke-width="2" stroke-dasharray="7 5"/></svg> Target ${target}</li></ul>
+      <p class="radar-cap">${caption}</p>
+      <button type="button" class="btn btn-sm btn-quiet" id="radarTableBtn" aria-expanded="false" aria-controls="radarTable">View as table</button>
+      <div id="radarTable" hidden><table class="history-table"><caption class="sr-only">Latest level in each skill against your target</caption><thead><tr><th>Skill</th><th>Latest level</th><th>Target</th><th>Gap</th><th>Date</th></tr></thead><tbody>${trs}</tbody></table></div>`;
+  }
+
+  // LEARNING NOTE: "pace" is how long you spend on each multiple-choice question. PACE_GUIDE_SEC is the one number the
+  // tile compares against. It is a guide, not a rule: the real Reading test allows up to about 56 minutes for 38 questions
+  // (about 88 seconds each; celpip.ca CELPIP-General page, checked 2026-11-05), so 90 seconds is a round ceiling.
+  // Change this one constant to change the guide everywhere.
+  const PACE_GUIDE_SEC = 90;
+  const PACE_ATTEMPTS = 10;
+  function paceTile(history) {
+    const timed = history.filter(h => h.timing && Array.isArray(h.timing.perQuestionSec)).slice(-PACE_ATTEMPTS);
+    // a 0 means the clock cut the passage off before that question was timed, so zeros are left out of the average
+    const secs = [].concat(...timed.map(h => h.timing.perQuestionSec)).filter(v => v > 0);
+    if (!secs.length) return `<h2>Pace</h2><p class="muted">No timing yet. Finish a Reading or Listening practice, or the timed exam, and your time per question shows here.</p>`;
+    const avg = Math.round(secs.reduce((a, b) => a + b, 0) / secs.length);
+    const slow = avg > PACE_GUIDE_SEC;
+    const m = Math.floor(avg / 60), r = avg % 60;
+    return `<h2>Pace</h2>
+      <div class="pace-row"><div class="tile-num" id="paceNum">${avg}<span class="pace-unit">s</span></div><p class="muted small">average per question<br>your guide: ${PACE_GUIDE_SEC}s (${Math.floor(PACE_GUIDE_SEC / 60)}:${String(PACE_GUIDE_SEC % 60).padStart(2, "0")})</p></div>
+      <p class="pace-status ${slow ? "slow" : "ok"}"><span class="pace-ico" aria-hidden="true"></span><strong>${slow ? "Running slow" : "On pace"}</strong> <span class="muted small">(${m}:${String(r).padStart(2, "0")} a question)</span></p>
+      <p class="muted small">From ${secs.length} question${secs.length === 1 ? "" : "s"} in your last ${timed.length} timed attempt${timed.length === 1 ? "" : "s"}.</p>`;
+  }
+
+  // Mastery grid: one cell per part. Uses the same per-part numbers as weakSpots (partStats). Each cell prints its percentage.
+  function masteryTile() {
+    const stats = getPartStats();
+    const rows = ["listening", "reading"].map(id => {
+      const parts = skillById(id).data.overview.parts;
+      const cells = parts.map((pt, i) => {
+        const s = stats[id + "|" + (i + 1)];
+        const pct = s && s.total ? Math.round(100 * s.right / s.total) : null;
+        const n = pct === null ? 0 : Math.round(Math.min(35, pct / 2.2)); // fill strength, capped so the text stays readable
+        const style = pct === null ? "" : ` style="background:color-mix(in srgb, var(--accent) ${n}%, var(--surface-2))"`;
+        const label = `${SKILL_NAMES[id]}, ${pt.name}: ${pct === null ? "no answers yet" : pct + "% right over " + s.total + " question" + (s.total === 1 ? "" : "s")}. Practise this part.`;
+        return `<td><button type="button" class="mg-cell" data-skill="${id}" data-part="${i + 1}"${style} aria-label="${escapeHtml(label)}"><b>${pct === null ? "n/a" : pct + "%"}</b><span>${pct === null ? "start" : Number(s.total) + " q"}</span></button></td>`;
+      });
+      while (cells.length < 6) cells.push('<td class="mg-gap"></td>'); // Reading has four parts; the last two columns stay empty
+      return `<tr><th scope="row">${SKILL_NAMES[id]}</th>${cells.join("")}</tr>`;
+    }).join("");
+    return `<h2>Mastery by part</h2>
+      <table class="mastery"><caption class="sr-only">Percent right in each part. Choose a cell to practise that part.</caption><thead><tr><th scope="col">Skill</th>${[1, 2, 3, 4, 5, 6].map(n => `<th scope="col">Part ${n}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted small">Percent right, and how many questions. Darker means stronger. Choose a part to practise it.</p>`;
+  }
+
   route("dashboard", () => {
     setPageTitle("Dashboard");
     const history = Storage.getHistory();
@@ -237,7 +333,7 @@
           </div>
           <div>
             <h2>Overall level</h2>
-            <p class="muted">${overall === null ? "No scores yet. Start with the diagnostic so the plan fits you." : `Estimated CLB <strong>${overall}</strong> against your target of <strong>${settings.targetCLB}</strong>.`}</p>
+            <p class="muted">${overall === null ? "No scores yet. Start with the diagnostic so the plan fits you." : `Estimated CLB <strong>${overall}</strong> against your target of <strong>${Number(settings.targetCLB)}</strong>.`}</p>
             <p class="muted small">A rough estimate from your own practice, not an official score.</p>
           </div>
         </div>
@@ -248,9 +344,12 @@
         </div>
         <div class="card tile">
           <h3>Test date</h3>
-          ${weeks !== null ? `<div class="tile-num">${weeks > 0 ? weeks : 0}</div><p class="muted small">${weeks > 0 ? `week${weeks === 1 ? "" : "s"} to go` : "Your test date has arrived or passed."}</p>` : `<p class="muted small">No date yet.</p><a class="btn btn-sm" href="#/settings">Add your test date</a>`}
+          ${weeks !== null ? `<div class="tile-num">${weeks > 0 ? weeks : 0}</div><p class="muted small">${weeks > 0 ? `week${weeks === 1 ? "" : "s"} to go` : "Your test date has arrived or passed."}</p>` : `<p class="muted small">No date yet.</p><a class="btn btn-sm" href="#/settings" aria-label="Add your test date">Add date</a>`}
         </div>
         ${diagDone < 4 ? `<div class="card tile span-4 today"><h2>Start here: the diagnostic</h2><p>A short cold test in each skill (${diagDone} of 4 done). It sets your starting point and shapes your plan. Do it before you study, without looking anything up.</p><a class="btn btn-primary" href="#/diagnostic">Open the diagnostic</a></div>` : ""}
+        <div class="card tile span-2 tile-radar">${radarTile(history, settings.targetCLB)}</div>
+        <div class="card tile span-2 tile-pace">${paceTile(history)}</div>
+        <div class="card tile span-2 tile-mastery">${masteryTile()}</div>
         <div class="card tile span-2 today">
           <span class="badge">Today</span> <strong>${plan.label}</strong>
           <ul class="tips-list mt">${plan.steps.map(s => `<li><a href="${s.href}">${escapeHtml(s.text)}</a> <span class="muted">(about ${s.min} min)</span></li>`).join("")}</ul>
@@ -274,12 +373,12 @@
           <h2>Weak spots</h2>
           ${weak.length ? `<ul class="tips-list">${weak.map(w => {
               const parts = skillById(w.skill).data.overview.parts;
-              return `<li><strong>${SKILL_NAMES[w.skill]}, ${escapeHtml((parts[w.part - 1] || { name: "Part " + w.part }).name)}</strong>: ${w.pct}% right over ${w.total} questions. <button class="btn btn-sm" data-skill="${w.skill}" data-part="${w.part}">Drill this part</button></li>`;
+              return `<li><strong>${SKILL_NAMES[w.skill]}, ${escapeHtml((parts[w.part - 1] || { name: "Part " + w.part }).name)}</strong>: ${Number(w.pct)}% right over ${Number(w.total)} questions. <button class="btn btn-sm" data-skill="${escapeHtml(String(w.skill))}" data-part="${w.part}">Drill this part</button></li>`;
             }).join("")}</ul>` : `<p class="muted">Answer at least four questions in a part and your lowest-scoring parts will appear here.</p>`}
         </div>
         <a class="card tile cta" href="#/review"><h3>Mistakes to review</h3><div class="tile-num">${due}</div><p class="muted small">due now</p></a>
         <a class="card tile cta" href="#/vocab"><h3>Word cards</h3><div class="tile-num">${vDue}</div><p class="muted small">ready</p></a>
-        <div class="card tile span-4"><h2>Progress over time</h2>${lineChart(history, settings.targetCLB) || '<p class="muted">Your chart appears after your first scored practice. Target: CLB ' + settings.targetCLB + '.</p>'}</div>
+        <div class="card tile span-4"><h2>Progress over time</h2>${lineChart(history, settings.targetCLB) || '<p class="muted">Your chart appears after your first scored practice. Target: CLB ' + Number(settings.targetCLB) + '.</p>'}</div>
         <div class="card tile span-2">
           <h2>Full mock exam</h2>
           <p class="muted">${lastExam ? `Last one ${fmtDate(lastExam.date)}: overall CLB <strong>${lastExam.overall}</strong>.` : "No full exam yet."} ${weeks !== null && weeks > 2 ? `Plan one about two weeks before your test, in about ${weeks - 2} week${weeks - 2 === 1 ? "" : "s"}.` : "Take one about two weeks before your test."}</p>
@@ -290,6 +389,13 @@
         </div>
       </section>
     `);
+    const rtb = document.getElementById("radarTableBtn");
+    if (rtb) rtb.onclick = () => {
+      const open = rtb.getAttribute("aria-expanded") !== "true";
+      rtb.setAttribute("aria-expanded", String(open));
+      rtb.textContent = open ? "Hide table" : "View as table";
+      document.getElementById("radarTable").hidden = !open;
+    };
     app.querySelectorAll("button[data-skill]").forEach(b => {
       b.onclick = () => {
         const skill = skillById(b.dataset.skill), part = parseInt(b.dataset.part);
@@ -339,10 +445,11 @@
         <a href="#/learn" class="back-link">&larr; All skills</a>
         <h1>${skill.icon}${skill.name}</h1>
         <p class="muted">${escapeHtml(ov.format)}</p>
-        <h2 class="mt">Part by part</h2>
+        <div class="lesson-layout" id="lessonLayout"><div class="lesson-main">
+        <h2 class="mt" data-toc="Part by part">Part by part</h2>
         ${ov.parts.map((p, i) => {
           const les = lessons[i];
-          return `<details class="model"><summary>${escapeHtml(p.name)}</summary>
+          return `<details class="model" data-toc="${escapeHtml(p.name)}"><summary>${escapeHtml(p.name)}</summary>
             <p class="muted">${escapeHtml(p.desc)}</p>
             ${les ? `<p><strong>What it tests:</strong> ${escapeHtml(les.whatItTests)}</p>
               <h4>Strategy</h4><ul class="tips-list">${les.strategy.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
@@ -351,10 +458,13 @@
               ${les.structure ? `<h4>A simple structure</h4><div class="passage-text model-text">${escapeHtml(les.structure)}</div>` : ""}` : ""}
             <a class="btn" href="#/practice/${skill.id}">Practise ${skill.name}</a></details>`;
         }).join("")}
-        <div class="grid-2 mt"><div class="card"><h3>Strategy tips</h3><ul class="tips-list">${ov.tips.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>
-        ${ov.rubricCriteria ? `<div class="card"><h3>What is assessed</h3><ul class="tips-list">${ov.rubricCriteria.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>` : ""}</div>
+        <div class="grid-2 mt"><div class="card"><h3 data-toc="Strategy tips">Strategy tips</h3><ul class="tips-list">${ov.tips.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>
+        ${ov.rubricCriteria ? `<div class="card"><h3 data-toc="What is assessed">What is assessed</h3><ul class="tips-list">${ov.rubricCriteria.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>` : ""}</div>
         <p class="muted small mt">Lessons are general study advice written for this app. They are not official guidance.</p>
+        </div><div id="tocSlot" class="toc-slot"></div></div>
       `);
+      // the contents list: a sticky column beside the lesson on wide screens, a collapsed "On this page" button on phones
+      Shell.contents(document.getElementById("lessonLayout"), document.getElementById("tocSlot"));
       return;
     }
     setPageTitle("Learn");
@@ -386,7 +496,7 @@
       const q = p.questions[m.qi];
       app.innerHTML = "";
       mount(`
-        <div class="run-header"><span class="tag">Review ${i + 1} of ${queue.length}</span><span class="muted small">${SKILL_NAMES[m.skill]}, ${escapeHtml(p.part)}. Box ${m.box} of 6.</span></div>
+        <div class="run-header"><span class="tag">Review ${i + 1} of ${queue.length}</span><span class="muted small">${SKILL_NAMES[m.skill]}, ${escapeHtml(p.part)}. Box ${Number(m.box)} of 6.</span></div>
         <h2>${escapeHtml(p.title)}</h2>
         ${m.skill === "reading"
           ? `<details class="model"><summary>Show the passage</summary><div class="passage-text">${escapeHtml(p.text).replace(/\n/g, "<br>")}</div></details>`
@@ -479,7 +589,7 @@
     if (!t) {
       setPageTitle("Grammar");
       mount(`<h1>Grammar</h1><p class="muted">${topics.length} short lessons, each with a six-question drill. Your best score is saved per topic.</p>
-        <div class="grid-3">${topics.map(x => `<a class="card cta" href="#/grammar/${x.id}"><h3>${escapeHtml(x.topic)}</h3><p class="muted small">${best[x.id] !== undefined ? "Best: " + best[x.id] + " of " + x.items.length : "Not tried"}</p></a>`).join("")}</div>`);
+        <div class="grid-3">${topics.map(x => `<a class="card cta" href="#/grammar/${x.id}"><h3>${escapeHtml(x.topic)}</h3><p class="muted small">${best[x.id] !== undefined ? "Best: " + Number(best[x.id]) + " of " + x.items.length : "Not tried"}</p></a>`).join("")}</div>`);
       return;
     }
     setPageTitle("Grammar: " + t.topic);
@@ -554,8 +664,8 @@
     const order = [1, 2, 3, 4, 5, 6, 0];
     mount(`
       <h1>Study plan</h1>
-      <p class="muted">A weekly rhythm built around sessions of about ${settings.sessionMin} minutes (change this in Settings). The rhythm itself is a proposal you can ignore or adapt.</p>
-      ${known.length ? `<div class="card"><h3>Where you are against CLB ${settings.targetCLB}</h3><ul class="tips-list">${gaps.map(g => `<li><strong>${g.s.name}:</strong> ${g.clb === null ? "no score yet (take the diagnostic)" : "about CLB " + g.clb + (g.gap ? `, ${g.gap} level${g.gap === 1 ? "" : "s"} below target` : ", at or above target")}</li>`).join("")}</ul>
+      <p class="muted">A weekly rhythm built around sessions of about ${Number(settings.sessionMin)} minutes (change this in Settings). The rhythm itself is a proposal you can ignore or adapt.</p>
+      ${known.length ? `<div class="card"><h3>Where you are against CLB ${Number(settings.targetCLB)}</h3><ul class="tips-list">${gaps.map(g => `<li><strong>${g.s.name}:</strong> ${g.clb === null ? "no score yet (take the diagnostic)" : "about CLB " + g.clb + (g.gap ? `, ${g.gap} level${g.gap === 1 ? "" : "s"} below target` : ", at or above target")}</li>`).join("")}</ul>
         <p>Biggest gap: <strong>${known[0].s.name}</strong>${known[0].gap ? "." : " (none; keep practising to stay there)."} Add one extra half-session on that skill each week.</p></div>`
         : `<div class="card today"><p>You have no scores yet, so the plan cannot point at a weak skill. <a href="#/diagnostic">Take the diagnostic first</a>.</p></div>`}
       ${weeks !== null ? `<div class="card mt"><p>${weeks > 0 ? `Your test date is in about <strong>${weeks}</strong> week${weeks === 1 ? "" : "s"}.` : "Your test date has arrived or passed."} Plan one timed full exam about two weeks before.</p></div>` : `<p class="muted mt">Add a test date in <a href="#/settings">Settings</a> to see a countdown.</p>`}
@@ -575,14 +685,14 @@
       ${history.length === 0 ? '<p class="muted">No attempts recorded yet.</p>' : `
         <div style="overflow-x:auto"><table class="history-table"><thead><tr><th>Date</th><th>Type</th><th>Detail</th><th>Score</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>
           ${history.map(h => `<tr><td>${fmtDate(h.date)}</td><td>${h.type === "exam" ? "Full exam" : skillById(h.skill).name + " practice"}${h.diagnostic ? " (diagnostic)" : ""}${h.mode === "mcq-timed" ? " (timed)" : ""}</td>
-            <td>${h.type === "exam" ? "L" + h.breakdown.listening.clb + " R" + h.breakdown.reading.clb + " W" + h.breakdown.writing.clb + " S" + h.breakdown.speaking.clb : (h.pct !== undefined ? h.pct + "%" : (h.checklistScore !== undefined ? h.checklistScore + "/" + h.checklistTotal : ""))}</td>
-            <td><strong>${h.type === "exam" ? h.overall : h.clb}</strong> CLB</td><td><button class="btn-icon" data-id="${h.id}" aria-label="Delete this attempt" title="Delete">&times;</button></td></tr>`).join("")}
+            <td>${h.type === "exam" ? "L" + (h.breakdown.listening.clb == null ? "-" : Number(h.breakdown.listening.clb)) + " R" + (h.breakdown.reading.clb == null ? "-" : Number(h.breakdown.reading.clb)) + " W" + Number(h.breakdown.writing.clb) + " S" + Number(h.breakdown.speaking.clb) : (h.pct !== undefined ? Number(h.pct) + "%" : (h.checklistScore !== undefined ? Number(h.checklistScore) + "/" + Number(h.checklistTotal) : ""))}</td>
+            <td><strong>${(h.type === "exam" ? h.overall : h.clb) == null ? "n/a" : Number(h.type === "exam" ? h.overall : h.clb)}</strong> CLB</td><td><button class="btn-icon" data-id="${escapeHtml(String(h.id))}" aria-label="Delete this attempt" title="Delete">&times;</button></td></tr>`).join("")}
         </tbody></table></div>
         <div class="cta-row-single"><button class="btn" id="clearAll">Clear all history</button></div>`}
     `);
-    app.querySelectorAll(".btn-icon").forEach(b => b.onclick = () => { Storage.deleteAttempt(b.dataset.id); render(); });
+    app.querySelectorAll(".btn-icon").forEach(b => b.onclick = () => { Storage.deleteAttempt(b.dataset.id); render(); toast("Attempt deleted"); });
     const c = document.getElementById("clearAll");
-    if (c) c.onclick = () => { if (confirm("Delete all saved history? This cannot be undone.")) { Storage.clearHistory(); render(); } };
+    if (c) c.onclick = () => { if (confirm("Delete all saved history? This cannot be undone.")) { Storage.clearHistory(); render(); toast("History cleared"); } };
   });
 
   // ================= SETTINGS =================
@@ -593,14 +703,23 @@
       <h1>Settings</h1>
       <div class="card">
         <label class="field-label" for="nameInput">Your first name (optional)</label><input type="text" id="nameInput" value="${escapeHtml(st.name)}" autocomplete="off">
-        <label class="field-label" for="targetSlider">Target level (CLB)</label><input type="range" min="4" max="12" value="${st.targetCLB}" id="targetSlider"><div class="muted small">Target: <strong id="targetVal">${st.targetCLB}</strong></div>
-        <label class="field-label" for="sessionInput">Minutes for a study session</label><input type="number" id="sessionInput" min="20" max="240" value="${st.sessionMin}">
-        <label class="field-label" for="hoursSlider">Hours available per week</label><input type="range" min="2" max="30" value="${st.hoursPerWeek}" id="hoursSlider"><div class="muted small">Per week: <strong id="hoursVal">${st.hoursPerWeek}</strong> hours</div>
+        <label class="field-label" for="targetSlider">Target level (CLB)</label><input type="range" min="4" max="12" value="${Number(st.targetCLB)}" id="targetSlider"><div class="muted small">Target: <strong id="targetVal">${Number(st.targetCLB)}</strong></div>
+        <label class="field-label" for="sessionInput">Minutes for a study session</label><input type="number" id="sessionInput" min="20" max="240" value="${Number(st.sessionMin)}">
+        <label class="field-label" for="hoursSlider">Hours available per week</label><input type="range" min="2" max="30" value="${Number(st.hoursPerWeek)}" id="hoursSlider"><div class="muted small">Per week: <strong id="hoursVal">${Number(st.hoursPerWeek)}</strong> hours</div>
         <label class="field-label" for="examDateInput">Test date (optional)</label><input type="date" id="examDateInput" value="${escapeHtml(st.examDate)}">
         <div class="cta-row-single"><button class="btn btn-primary" id="saveSettings">Save</button></div>
       </div>
+      <div class="card mt"><h3>Theme</h3>
+        <p class="muted small">Auto follows your device and changes when it does. Your choice is saved in this browser.</p>
+        <div class="seg-wrap" data-theme-switch></div>
+      </div>
+      <div class="card mt"><h3>Practise like the real test</h3>
+        <label class="check-row"><input type="checkbox" id="realismToggle" ${st.examRealism ? "checked" : ""}><span class="sw-text">Practise like the real test: hide highlighter, notes and flags</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
+        <p class="muted small">Turns off the study aids so practice feels like test day. The question dots stay. The Timed Exam always works this way, whatever this switch says.</p>
+        <p id="realismMsg" class="muted small" role="status"></p>
+      </div>
       <div class="card mt"><h3>Speaking transcripts</h3>
-        <label class="check-row"><input type="checkbox" id="sttToggle" ${st.speechToText ? "checked" : ""}><span>Turn my spoken answers into text after Speaking practice</span></label>
+        <label class="check-row"><input type="checkbox" id="sttToggle" ${st.speechToText ? "checked" : ""}><span class="sw-text">Turn my spoken answers into text after Speaking practice</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
         <p class="muted small">Off unless you switch it on. A transcript lets the app count your words and pace and show what you said. To make it, your browser sends your spoken answer to an online speech service (in Chrome, Google's). Your recording itself stays on this device either way.</p>
         <p id="sttMsg" class="muted small" role="status"></p>
       </div>
@@ -617,36 +736,40 @@
       Storage.saveSettings({ ...Storage.getSettings(), name: document.getElementById("nameInput").value.trim(), targetCLB: parseInt(document.getElementById("targetSlider").value), hoursPerWeek: parseInt(document.getElementById("hoursSlider").value),
         examDate: document.getElementById("examDateInput").value, sessionMin: Math.max(20, parseInt(document.getElementById("sessionInput").value) || 75) });
       navigate("#/dashboard");
+      toast("Settings saved");
     };
     // Saved as soon as it is ticked, so it never waits for the Save button.
     document.getElementById("sttToggle").onchange = e => {
       Storage.saveSettings({ ...Storage.getSettings(), speechToText: e.target.checked });
       document.getElementById("sttMsg").textContent = e.target.checked ? "Transcripts on. Speaking answers will be sent to your browser's speech service." : "Transcripts off. Nothing leaves this browser.";
+      toast(e.target.checked ? "Transcripts on" : "Transcripts off", "info");
     };
-    document.getElementById("exportBtn").onclick = () => download("celpip-backup-" + today() + ".json", JSON.stringify(Storage.exportAll(), null, 1), "application/json");
+    // Saved as soon as it is switched, like the transcripts switch.
+    document.getElementById("realismToggle").onchange = e => {
+      Storage.saveSettings({ ...Storage.getSettings(), examRealism: e.target.checked });
+      document.getElementById("realismMsg").textContent = e.target.checked ? "On. Highlighter, notes and flags are hidden in practice." : "Off. Highlighter, notes and flags are available in practice.";
+      toast(e.target.checked ? "Practising like the real test" : "Study aids back on", "info");
+    };
+    document.getElementById("exportBtn").onclick = () => {
+      download("celpip-backup-" + today() + ".json", JSON.stringify(Storage.exportAll(), null, 1), "application/json");
+      document.getElementById("dataMsg").textContent = "Backup file saved to your downloads.";
+      toast("Backup exported");
+    };
     document.getElementById("importFile").onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
       const r = new FileReader();
       r.onload = () => {
         let obj = null;
         try { obj = JSON.parse(r.result); } catch (x) { obj = null; }
-        document.getElementById("dataMsg").textContent = Storage.importAll(obj) ? "Backup imported. Open the dashboard to see it." : "That file could not be read as a backup.";
+        const good = Storage.importAll(obj), skip = good ? Storage.importSkipped() : 0;
+        const note = skip ? "Backup imported; " + skip + " entr" + (skip === 1 ? "y" : "ies") + " skipped" : "Backup imported";
+        document.getElementById("dataMsg").textContent = good ? note + ". Open the dashboard to see it." : "That file could not be read as a backup.";
+        toast(good ? note : "That file could not be read as a backup", good ? "ok" : "error");
       };
       r.readAsText(f);
     };
-    document.getElementById("resetAll").onclick = () => { if (confirm("This erases all history, notes and settings in this browser. Continue?")) { Storage.resetAll(); render(); } };
+    document.getElementById("resetAll").onclick = () => { if (confirm("This erases all history, notes and settings in this browser. Continue?")) { Storage.resetAll(); render(); toast("All data erased", "info"); } };
   });
-
-  // ---------- Theme button in the header ----------
-  const themeBtn = document.getElementById("themeBtn");
-  function syncTheme() { const dark = document.documentElement.getAttribute("data-theme") === "dark"; themeBtn.setAttribute("aria-pressed", String(dark)); }
-  themeBtn.onclick = () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("celpip_theme", next); } catch (e) {}
-    syncTheme();
-  };
-  syncTheme();
 
   // Everything is registered, so draw the first screen.
   render();

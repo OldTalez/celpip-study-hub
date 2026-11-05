@@ -4,6 +4,8 @@
 // graphics such as icons, bars, focus rings and the outlines of form controls.
 // The formula converts each colour to its relative luminance (how bright it really looks to the eye) and compares the two.
 // Run with:  node tools/check-contrast.js   It reads the colour variables from css/style.css, so it stays in step with the design.
+// Turn B (2026-11-05) added four pairs for the question dots, notes, bars and toast.
+// Updated 2026-11-05 (T-029 turn A) for the "A Lakeline" tokens: --accent is now the accent as text/graphic and --accent-fill the fill.
 const fs = require("fs");
 const path = require("path");
 const css = fs.readFileSync(path.join(__dirname, "..", "css", "style.css"), "utf8");
@@ -24,12 +26,24 @@ function lum(hex) {
 function ratio(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); }
 
 // [foreground, background, minimum]: 4.5 for text, 3 for graphics (icons, bars, focus rings) and control outlines.
+// The list follows the contrast table of the interaction standard (Company/Work/2026-11-05 T-029 celpip-identity/
+// interaction-standard.md, section 10, direction A) plus the extra pairs this app uses.
 const pairs = [
-  ["text", "bg", 4.5], ["text", "surface", 4.5], ["text", "surface-2", 4.5], ["muted", "bg", 4.5], ["muted", "surface", 4.5], ["muted", "surface-2", 4.5],
-  ["link", "bg", 4.5], ["link", "surface", 4.5], ["accent-ink", "accent", 4.5], ["accent-ink", "accent-hover", 4.5],
-  ["accent-line", "bg", 3], ["accent-line", "surface", 3], ["ctl", "bg", 3], ["ctl", "surface", 3],
-  ["good", "good-bg", 4.5], ["good", "surface", 4.5], ["good", "bg", 4.5], ["bad", "bad-bg", 4.5], ["bad", "surface", 4.5], ["bad", "bg", 4.5], ["bg", "text", 4.5],
-  ["text", "mark", 4.5], ["accent-line", "surface-2", 3], ["good", "surface-2", 4.5], ["bad", "bad-bg", 4.5]
+  ["text", "bg", 4.5], ["text", "surface", 4.5], ["text", "surface-2", 4.5],
+  ["muted", "bg", 4.5], ["muted", "surface", 4.5], ["muted", "surface-2", 4.5],
+  ["accent", "bg", 4.5], ["accent", "surface", 4.5], ["accent", "surface-2", 4.5],   // the accent as text, link, icon, focus ring
+  ["accent-ink", "accent-fill", 4.5],                                                // text on a filled button or badge
+  ["ctl", "bg", 3], ["ctl", "surface", 3], ["ctl", "surface-2", 3],                  // control borders, radio rings, switch tracks
+  ["good", "surface", 4.5], ["bad", "surface", 4.5],                                 // icons and words on a card
+  ["text", "mark", 4.5],                                                             // highlighted text
+  ["bg", "text", 4.5],                                                               // text on the dark toast / exam banner
+  ["accent-fill", "bg", 3], ["accent-fill", "surface", 3],                           // a filled button or pill against the page
+  ["chart-4", "surface", 3], ["good", "bg", 4.5], ["bad", "bg", 4.5],
+  // Added in T-029 turn B for the practice tools (js/tools.js):
+  ["accent", "mark", 3],        // the dotted underline and note icon on a highlighted note
+  ["good", "surface-2", 3],     // the target-range band edges and the "in range" fill on the bar track
+  ["bad", "surface", 4.5],      // the "Over by" icon beside the word-count bar (also listed above, kept for the bar)
+  ["text", "bg", 4.5]           // the toast text is --bg on --text; the reverse pair is the same ratio
 ];
 let fails = 0;
 [["light", light], ["dark", dark]].forEach(([name, t]) => {

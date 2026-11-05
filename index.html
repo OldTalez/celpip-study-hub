@@ -4,68 +4,144 @@
   This is the one and only page of the app. It holds the header, a footer and an empty main area
   (id "app"). The scripts at the bottom fill that area with the Dashboard, Learn, Practice and other screens.
   Order matters: the question data files load first, then the generated study material (js/data/new/),
-  then storage.js, scoring.js, app.js (the practice and exam engines) and finally study.js (the screens
+  then shell.js (the frame: menus, theme switch, focus mode; it needs only the page itself), storage.js, scoring.js, app.js (the practice and exam engines) and finally study.js (the screens
   and study tools). Open this file in a browser to run the app; there is no server and no install step.
   Version 2 (2026-10-22): no outside libraries and no network calls (the old Chart.js link and the optional
   AI-grading key were removed), a light and a dark theme, and a lot more study material.
+  Look "A Lakeline" (2026-11-05, T-029 turn A): a left menu on wide screens, a bottom tab bar on phones, a Light / Dark / Auto
+  theme switch, and fonts bundled in fonts/ (no outside server). See LEARNING-GUIDE.md.
 -->
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" data-theme-pref="auto">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow"> <!-- Board, 2026-11-05: keep the site out of search engines -->
   <title>CELPIP Study Hub</title>
-  <!-- Runs before the page is drawn so the saved (or system) theme shows from the first frame, with no flash.
-       A try/catch is used because some browsers block localStorage in private windows. -->
+  <!-- Runs before the page is drawn so the saved (or device) theme shows from the first frame, with no flash.
+       "celpip_theme" holds light, dark or auto (a missing or odd value means auto = follow the device).
+       A try/catch is used because some browsers block localStorage in private windows. js/shell.js keeps this in step later. -->
   <script>
     (function () {
-      var t = "light";
+      var pref = "auto", resolved = "light";
       try {
         var saved = localStorage.getItem("celpip_theme");
-        t = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        if (saved === "light" || saved === "dark") pref = saved;
+        resolved = pref === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : pref;
       } catch (e) {}
-      document.documentElement.setAttribute("data-theme", t);
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-pref", pref);
     })();
   </script>
+  <!-- The reading font is fetched early so the first text does not wait for it (it is bundled in fonts/, no outside server). -->
+  <link rel="preload" href="fonts/AtkinsonHyperlegible-Regular-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
   <!-- Used when the app is opened from its website: name and icon for "Add to Home Screen". Ignored when opened as a file. -->
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-512.png">
-  <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0c0a09" media="(prefers-color-scheme: dark)">
+  <!-- js/shell.js rewrites these two to the colour of the theme that is showing -->
+  <meta name="theme-color" content="#f2f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a171d" media="(prefers-color-scheme: dark)">
 </head>
 <body>
+  <!-- Icon sprite: small line drawings drawn once and reused with <use>. They take the text colour. Hidden from screen readers. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+    <symbol id="i-dashboard" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z"/></symbol>
+    <symbol id="i-learn" viewBox="0 0 24 24"><path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/></symbol>
+    <symbol id="i-practice" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 4v5h-5M20 12a8 8 0 0 1-14 5l-2-2M4 20v-5h5"/></symbol>
+    <symbol id="i-vocab" viewBox="0 0 24 24"><path d="M3 8h13v12H3zM7 4h13v12"/></symbol>
+    <symbol id="i-grammar" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h14"/></symbol>
+    <symbol id="i-notes" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5"/></symbol>
+    <symbol id="i-plan" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-exam" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 3h6"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2L4 8M4 3v5h5M12 8v4l3 2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></symbol>
+  </defs></svg>
+
   <a class="skip-link" href="#app">Skip to content</a>
-  <header class="topbar">
-    <div class="topbar-in">
+
+  <!-- Wide screens (1000px and up): left menu. Hidden on phones by the CSS. -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">CELPIP<br>Study Hub</div>
+    <nav id="mainNav" aria-label="Main">
+      <a href="#/dashboard" data-section="dashboard"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg>Dashboard</a>
+      <a href="#/learn" data-section="learn"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn</a>
+      <a href="#/practice" data-section="practice"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg>Practice</a>
+      <a href="#/review" data-section="review"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg>Review</a>
+      <a href="#/vocab" data-section="vocab"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words</a>
+      <a href="#/grammar" data-section="grammar"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar</a>
+      <a href="#/notes" data-section="notes"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes</a>
+      <a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>Plan</a>
+      <a href="#/exam" data-section="exam"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg>Timed Exam</a>
+      <a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a>
+      <a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a>
+    </nav>
+    <div class="seg-wrap" data-theme-switch></div>
+  </aside>
+
+  <div class="content">
+    <!-- Phones (below 1000px): top bar. The button cycles the theme Light, Dark, Auto. -->
+    <header class="topbar" id="topbar">
       <div class="brand">CELPIP Study Hub</div>
-      <nav id="mainNav" aria-label="Main">
-        <a href="#/dashboard" data-section="dashboard">Dashboard</a>
-        <a href="#/learn" data-section="learn">Learn</a>
-        <a href="#/practice" data-section="practice">Practice</a>
-        <a href="#/review" data-section="review">Review</a>
-        <a href="#/vocab" data-section="vocab">Words</a>
-        <a href="#/grammar" data-section="grammar">Grammar</a>
-        <a href="#/notes" data-section="notes">Notes</a>
-        <a href="#/plan" data-section="plan">Plan</a>
-        <a href="#/exam" data-section="exam">Timed Exam</a>
-        <a href="#/history" data-section="history">History</a>
-        <a href="#/settings" data-section="settings">Settings</a>
-      </nav>
-      <button class="icon-btn" id="themeBtn" type="button" aria-pressed="false" aria-label="Dark theme" title="Switch between light and dark">
-        <svg class="ico" style="margin:0" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Theme: Auto. Press to change.">
+        <svg class="ico-svg" aria-hidden="true"><use href="#i-theme"/></svg>
       </button>
+    </header>
+
+    <!-- Focus mode: shown only while a practice run or the exam is going (the menus are hidden then). -->
+    <div class="taskbar" id="taskBar">
+      <button class="btn btn-quiet" id="exitBtn" type="button"><svg class="ico-svg" aria-hidden="true"><use href="#i-x"/></svg>Exit</button>
+      <span class="task-name" id="taskName"></span>
     </div>
-  </header>
 
   <main id="app" tabindex="-1"></main>
+  <div id="toastHost" class="toast-host" role="status" aria-live="polite"></div> <!-- short status messages ("Settings saved"); see toast() in js/tools.js -->
   <div id="announcer" class="sr-only" aria-live="assertive"></div> <!-- timers say "1:00 left" here for screen readers -->
 
   <footer class="app-footer">
     Unofficial study tool with original practice material written for this app. Not affiliated with or endorsed by the organisation that runs the CELPIP test.
     Practice scores are rough estimates for study only, not predictions of an official score. Everything stays in this browser; nothing is sent anywhere unless you switch on Speaking transcripts in Settings.
   </footer>
+  </div><!-- /.content -->
+
+  <!-- Phones: bottom tab bar. More opens a sheet with the other seven pages. -->
+  <nav class="tabbar" id="tabBar" aria-label="Sections">
+    <a href="#/dashboard" data-section="dashboard"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg></span>Dashboard</a>
+    <a href="#/practice" data-section="practice"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg></span>Practice</a>
+    <a href="#/review" data-section="review"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg></span>Review</a>
+    <a href="#/exam" data-section="exam"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg></span>Exam</a>
+    <button type="button" id="moreBtn" aria-haspopup="dialog"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-more"/></svg></span>More</button>
+  </nav>
+
+  <dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">
+    <div class="dlg-body"><h2 id="moreTitle">More</h2></div>
+    <ul class="sheet-list">
+      <li><a href="#/learn" data-section="learn"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn</a></li>
+      <li><a href="#/vocab" data-section="vocab"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words</a></li>
+      <li><a href="#/grammar" data-section="grammar"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar</a></li>
+      <li><a href="#/notes" data-section="notes"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes</a></li>
+      <li><a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>Plan</a></li>
+      <li><a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a></li>
+      <li><a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a></li>
+    </ul>
+    <div class="seg-wrap" data-theme-switch></div>
+    <div class="dlg-actions"><button class="btn" type="button" data-close-sheet>Close</button></div>
+  </dialog>
+
+  <!-- "Leave?" question for the Exit button. Keep going is the main choice and has focus first. -->
+  <dialog id="confirmDlg" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <form method="dialog">
+      <div class="dlg-body"><h2 id="confirmTitle">Leave?</h2><p id="confirmText"></p></div>
+      <div class="dlg-actions">
+        <button class="btn" value="leave">Leave</button>
+        <button class="btn btn-primary" value="keep" id="confirmKeep">Keep going</button>
+      </div>
+    </form>
+  </dialog>
 
   <!-- Practice material (original, unofficial). Listening and reading pools first, then the files that gather them. -->
   <script src="js/data/listening_pool_1.js"></script>
@@ -85,8 +161,10 @@
   <script src="js/data/new/vocab.js"></script>
   <script src="js/data/new/grammar.js"></script>
   <script src="js/data/new/lessons.js"></script>
+  <script src="js/shell.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/scoring.js"></script>
+  <script src="js/tools.js"></script>
   <script src="js/app.js"></script>
   <script src="js/study.js"></script>
   <!-- On the website (https), save the app for offline use (see sw.js). Opened as a file, this does nothing. -->

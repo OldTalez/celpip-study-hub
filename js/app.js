@@ -8,6 +8,8 @@
 // Screens are built by pasting HTML text into the page with el(`...`). Anything typed by a
 // user is passed through escapeHtml first, so it shows as text and cannot run as code.
 // Reading order: utilities, timer, speech and recording helpers, router, then one section per screen.
+// The frame around the screens (menus, theme, focus mode) lives in js/shell.js, which loads first; this file calls it
+// through the Shell object when a screen is drawn and when a practice run or the exam starts or ends.
 // Small inline SVG icons (drawn with lines, so they follow the text colour and need no image files).
 // LEARNING NOTE: SVG is a text format for drawings. "stroke=currentColor" means "use the colour of the surrounding text",
 // so the same icon works in light and dark themes. aria-hidden hides it from screen readers because the word beside it says the same thing.
@@ -86,7 +88,7 @@ function Countdown(seconds, onTick, onDone) {
 }
 
 // Shows a countdown's time in its box and marks the box when time runs low, so a glance is enough:
-// "low" (an orange pill) from the last quarter or last minute, whichever is shorter, and "critical" (red) in the last
+// "low" (a clock icon and the words "Low time") from the last quarter or last minute, whichever is shorter, and "critical" (a red pill with an alert icon) in the last
 // 10 seconds or last tenth. The CSS reads data-state. For longer timers a screen reader also hears "1:00 left" once,
 // through the hidden "announcer" box in index.html (aria-live means: read out changes to this box).
 function paintTimer(target, remaining, total) {
@@ -115,12 +117,15 @@ function ringTimerHtml(seconds) {
 
 // Counts how many questions in a form have an answer picked and writes "3 of 6 answered" into node.
 // A question counts once however often you change your mind (a Set keeps each question name only once).
+// onChange(n, names) is told the count and the Set of answered question names; the question dots in js/tools.js
+// use it to repaint themselves, so there is one counter, not two.
 function watchAnswered(form, node, total, onChange) {
   const update = () => {
-    const n = new Set([...form.querySelectorAll("input:checked")].map(i => i.name)).size;
+    const names = new Set([...form.querySelectorAll("input:checked")].map(i => i.name));
+    const n = names.size;
     node.textContent = `${n} of ${total} answered`;
     node.classList.toggle("all-done", n === total);
-    if (onChange) onChange(n);
+    if (onChange) onChange(n, names);
   };
   form.addEventListener("change", update);
   update();
@@ -128,14 +133,17 @@ function watchAnswered(form, node, total, onChange) {
 
 // ---------- Speech synthesis (Listening playback) ----------
 // Reads listening passages aloud using the browser's built-in speech synthesis (no audio files needed).
+const SPEECH_RATE = 0.95;  // how fast the browser voice reads (1 is normal); also used to estimate the audio length for the progress bar
 const Speech = (() => {
   let utter = null;
   let supported = "speechSynthesis" in window;
-  function speak(text, { onend, rate = 0.95 } = {}) {
+  // onprogress(charIndex) is called as the voice reaches each word ("boundary" event); not every voice sends them.
+  function speak(text, { onend, onprogress, rate = SPEECH_RATE } = {}) {
     if (!supported) { if (onend) setTimeout(onend, 500); return; }
     window.speechSynthesis.cancel();
     utter = new SpeechSynthesisUtterance(text);
     utter.rate = rate;
+    if (onprogress) utter.onboundary = e => onprogress(e.charIndex);
     utter.onend = () => onend && onend();
     utter.onerror = () => onend && onend();
     window.speechSynthesis.speak(utter);
@@ -224,80 +232,7 @@ const MicMeter = (() => {
   return { start, stop };
 })();
 
-// ---------- Passage highlighter (Reading) ----------
-// Like a highlighter pen on a paper test: switch it on, select words in the passage, and they are marked.
-// Tap or click a marked part (with the highlighter on) to remove it. Marks stay while you are on that passage.
-// LEARNING NOTE: a "Range" is the browser's description of what is selected (where it starts and ends). We walk every
-// piece of text inside the passage (a TreeWalker visits them in order), cut out the selected part of each piece with
-// splitText, and wrap it in a <mark> element. Wrapping piece by piece works even when the selection crosses a line break.
-function markRange(range, root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const pieces = [];
-  while (walker.nextNode()) {
-    const n = walker.currentNode;
-    if (!range.intersectsNode(n) || !n.nodeValue.trim() || n.parentElement.closest("mark.hl")) continue;
-    const start = n === range.startContainer ? range.startOffset : 0;
-    const end = n === range.endContainer ? range.endOffset : n.nodeValue.length;
-    if (end > start) pieces.push([n, start, end]);
-  }
-  pieces.forEach(([n, start, end]) => {
-    const middle = n.splitText(start);
-    middle.splitText(end - start);
-    const mark = document.createElement("mark");
-    mark.className = "hl";
-    middle.parentNode.insertBefore(mark, middle);
-    mark.appendChild(middle);
-  });
-  return pieces.length;
-}
-function unmark(mark) {
-  const parent = mark.parentNode;
-  while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
-  parent.removeChild(mark);
-  parent.normalize();  // join the text pieces back together
-}
-function highlighterBarHtml() {
-  return `<div class="hl-bar">
-    <button type="button" class="btn btn-sm" data-hl-toggle aria-pressed="false">Highlighter</button>
-    <button type="button" class="btn btn-sm" data-hl-clear>Clear highlights</button>
-    <span class="muted small" data-hl-hint>Turn on, then select words in the passage.</span>
-  </div>`;
-}
-// scope holds the bar and the .passage-text. onChange (optional) is told after each change, to remember the marks.
-function enableHighlighter(scope, onChange) {
-  const text = scope.querySelector(".passage-text"), toggle = scope.querySelector("[data-hl-toggle]");
-  if (!text || !toggle) return;
-  let on = false;
-  const changed = () => { if (onChange) onChange(text.innerHTML); };
-  toggle.onclick = () => {
-    on = !on;
-    toggle.setAttribute("aria-pressed", String(on));
-    text.classList.toggle("hl-on", on);
-    scope.querySelector("[data-hl-hint]").textContent = on ? "On: select words to mark them; tap a mark to remove it." : "Turn on, then select words in the passage.";
-  };
-  scope.querySelector("[data-hl-clear]").onclick = () => { text.querySelectorAll("mark.hl").forEach(unmark); changed(); };
-  const apply = () => {
-    if (!on) return;
-    const sel = window.getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return;
-    const range = sel.getRangeAt(0);
-    if (!text.contains(range.commonAncestorContainer)) return;
-    if (markRange(range, text)) { sel.removeAllRanges(); changed(); }
-  };
-  text.addEventListener("mouseup", apply);
-  // Phones select with a long press and handles, with no mouseup: wait until the selection has stopped changing.
-  let wait = 0;
-  const onSelect = () => {
-    if (!document.body.contains(text)) { document.removeEventListener("selectionchange", onSelect); return; }  // screen changed
-    clearTimeout(wait);
-    wait = setTimeout(apply, 700);
-  };
-  document.addEventListener("selectionchange", onSelect);
-  text.addEventListener("click", e => {
-    const m = e.target.closest("mark.hl");
-    if (m && on && window.getSelection().isCollapsed) { unmark(m); changed(); }
-  });
-}
+// ---------- Passage highlighter and notes: see js/tools.js (PassageTools) ----------
 
 // ---------- Speech-to-text transcription (Speaking practice, opt-in) ----------
 // Uses the browser's built-in speech recognition. In Chrome and Edge this SENDS THE AUDIO to an online speech
@@ -351,20 +286,38 @@ function render() {
   screenId++;
   Speech.stop();
   stopAllTimers();
+  PassageTools.detach();         // the selection pop-up and note tip belong to the old screen
+  Toast.clear();                 // so does a toast left over from the screen before
   Recorder.cancel();             // a microphone left recording is switched off
   Transcriber.abort();
   window.onbeforeunload = null;  // the "exam in progress" warning belongs to the exam screen only
   const path = currentRoute();
+  lastRoute = path;
   const parts = path.split("/").filter(Boolean);
-  document.querySelectorAll("#mainNav a").forEach(a => a.classList.toggle("active", a.dataset.section === parts[0]));
   const top = parts[0] || "dashboard";
+  Shell.beforeRender(top);       // ends focus mode, closes the More sheet, marks the current menu item
   const handler = routes[top];
   app.innerHTML = "";
   if (handler) handler(parts.slice(1));
   else routes["dashboard"]([]);
+  Shell.afterRender();           // marks the screen title, fills the theme switches
   window.scrollTo(0, 0);
 }
-window.addEventListener("hashchange", render);
+
+// Screen changes use the View Transitions API: the browser fades the old screen out and the new one in (the CSS in
+// style.css sets the timing). Where it is missing, or the person asked their device for reduced motion, or the route did
+// not change (for example "Practice Again" on the same page), the screen is simply drawn as before.
+let lastRoute = null;
+function goToRoute() {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || reduced || lastRoute === null || currentRoute() === lastRoute) return render();
+  const html = document.documentElement;
+  html.classList.add("vt-route");  // the CSS only animates the screen while this class is on
+  const done = () => html.classList.remove("vt-route");
+  const t = document.startViewTransition(() => render());
+  t.finished.then(done, done);
+}
+window.addEventListener("hashchange", goToRoute);
 document.addEventListener("click", e => {
   const a = e.target.closest('a[href^="#/"]');
   if (a && a.getAttribute("href") === window.location.hash) { e.preventDefault(); render(); }
@@ -471,6 +424,7 @@ function renderMcqPracticeIntro(skill) {
 // opts.timeLimitSec turns on a running clock for the whole set (v2). When it reaches zero the passage on screen is
 // checked as it stands and the rest are skipped, like a real timed section.
 function runMcqPractice(skill, passageList, opts = {}) {
+  Shell.focusMode.enter({ name: skill.name + (opts.timeLimitSec ? " timed section" : " practice") });  // menus away, Exit button shown
   let pIndex = 0;
   let clock = null, clockLeft = opts.timeLimitSec || 0, timeUp = false;
   const userAnswers = []; // { passageId, answers: [selectedIndex,...] }
@@ -479,6 +433,8 @@ function runMcqPractice(skill, passageList, opts = {}) {
     const passage = passageList[pIndex];
     const answers = new Array(passage.questions.length).fill(null);
     const isListening = skill.id === "listening";
+    // Question tools for this passage: the seconds spent per question, and which questions are flagged (js/tools.js).
+    const qs = { timer: QTimer(passage.questions.length), flags: new Array(passage.questions.length).fill(false) };
 
     app.innerHTML = "";
     app.appendChild(el(`
@@ -494,10 +450,11 @@ function runMcqPractice(skill, passageList, opts = {}) {
           ${Speech.supported ? `
             <button class="btn" id="playBtn">Play audio</button>
             <span class="muted small" id="audioStatus">Not played yet</span>
+            ${listenBarHtml()}
           ` : `<p class="muted">Your browser doesn't support text-to-speech playback. Read the transcript below instead:</p><p class="transcript">${escapeHtml(passage.script)}</p>`}
         </div>
       ` : ""}
-      ${isListening ? "" : `<div class="split"><div class="split-passage" tabindex="0" role="region" aria-label="Passage">${highlighterBarHtml()}<div class="passage-text">${escapeHtml(passage.text).replace(/\n/g, "<br>")}</div></div><div class="split-questions">`}
+      ${isListening ? "" : `<div class="split"><div class="split-passage" tabindex="0" role="region" aria-label="Passage">${PassageTools.barHtml()}<div class="passage-text">${escapeHtml(passage.text).replace(/\n/g, "<br>")}</div></div><div class="split-questions">`}
       <form id="qForm">
         ${passage.questions.map((q, qi) => `
           <div class="question-block">
@@ -518,16 +475,30 @@ function runMcqPractice(skill, passageList, opts = {}) {
       </div>
       ${isListening ? "" : `</div></div>`}
     `));
-    watchAnswered(document.getElementById("qForm"), document.getElementById("answeredCount"), passage.questions.length);
-    if (!isListening) enableHighlighter(app.querySelector(".split-passage"));
+    // Dots, Flag buttons and the "This question" clock; the answered counter repaints the dots too.
+    const qt = mountQuestionTools(document.getElementById("qForm"), qs, { aids: !realismOn(), header: app.querySelector(".run-header") });
+    activeTimers.push(qt);  // the router stops it when the screen changes
+    watchAnswered(document.getElementById("qForm"), document.getElementById("answeredCount"), passage.questions.length, (n, names) => qt.sync(names));
+    if (!isListening) PassageTools.attach(app.querySelector(".split-passage"), PassageTools.newState());
 
     if (isListening && Speech.supported) {
       const playBtn = document.getElementById("playBtn");
       const status = document.getElementById("audioStatus");
+      const bar = ListenBar(document.getElementById("listenBar"), passage.script, SPEECH_RATE);
+      activeTimers.push(bar);
       playBtn.onclick = () => {
         playBtn.disabled = true;
         status.textContent = "Playing...";
-        Speech.speak(passage.script, { onend: () => { status.textContent = "Finished playing (click again to replay)"; playBtn.disabled = false; } });
+        bar.start();
+        Speech.speak(passage.script, {
+          rate: SPEECH_RATE, onprogress: ci => bar.boundary(ci),
+          onend: () => {
+            bar.end();
+            // With "Practise like the real test" on, the audio plays once, as on test day.
+            if (realismOn()) status.textContent = "Finished playing (once, like the real test)";
+            else { status.textContent = "Finished playing (click again to replay)"; playBtn.disabled = false; }
+          }
+        });
       };
     }
 
@@ -542,7 +513,8 @@ function runMcqPractice(skill, passageList, opts = {}) {
         const val = form.querySelector(`input[name="q${qi}"]:checked`);
         answers[qi] = val ? parseInt(val.value) : null;
       });
-      userAnswers.push({ passageId: passage.id, answers });
+      qt.stop();  // stop counting; the review screen does not count as time on a question
+      userAnswers.push({ passageId: passage.id, answers, secs: qs.timer.all() });
       showReview(passage, answers);
     };
   }
@@ -582,6 +554,7 @@ function runMcqPractice(skill, passageList, opts = {}) {
 
   function finishPractice() {
     if (clock) clock.stop();
+    Shell.focusMode.exit();  // the result screen shows the menus again
     let totalCorrect = 0, totalQuestions = 0;
     userAnswers.forEach(ua => {
       const passage = passageList.find(p => p.id === ua.passageId);
@@ -592,10 +565,12 @@ function runMcqPractice(skill, passageList, opts = {}) {
     if (opts.timeLimitSec) passageList.forEach(p => { if (!userAnswers.some(u => u.passageId === p.id)) totalQuestions += p.questions.length; });
     const pct = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
     const clb = clbFromPercent(pct);
+    // timing: seconds per question, in passage order; a passage the clock cut off counts as zeros (see buildTiming in tools.js).
+    const timing = buildTiming(passageList.map(p => { const u = userAnswers.find(x => x.passageId === p.id); return u ? u.secs : new Array(p.questions.length).fill(0); }));
     const attempt = Storage.saveAttempt({
       type: "practice", skill: skill.id, mode: opts.timeLimitSec ? "mcq-timed" : "mcq",
       passageIds: passageList.map(p => p.id),
-      correct: totalCorrect, total: totalQuestions, pct, clb
+      correct: totalCorrect, total: totalQuestions, pct, clb, timing
     });
     app.innerHTML = "";
     app.appendChild(el(`
@@ -687,6 +662,7 @@ function renderSpeakingIntro(skill) {
 }
 
 function runWritingTask(skill, prompt, isExam, onComplete) {
+  Shell.focusMode.enter({ name: "Writing practice", exam: isExam });  // inside the exam this keeps the exam's settings
   let timer = null, timeUp = false;
   app.innerHTML = "";
   app.appendChild(el(`
@@ -694,6 +670,7 @@ function runWritingTask(skill, prompt, isExam, onComplete) {
     <h2>${prompt.title || prompt.task}</h2>
     <div class="prompt-box">${escapeHtml(prompt.prompt).replace(/\n/g, "<br>")}</div>
     <textarea id="writingArea" rows="12" placeholder="Start writing here..."></textarea>
+    ${wordBarHtml(prompt.wordTarget)}
     <div class="run-footer">
       <span class="muted small" id="wordCountLabel">0 words</span>
       <button class="btn btn-primary" id="submitWriting">Submit</button>
@@ -704,7 +681,9 @@ function runWritingTask(skill, prompt, isExam, onComplete) {
   textarea.addEventListener("input", () => {
     const wc = wordCount(textarea.value);
     wcLabel.textContent = `${wc} word${wc === 1 ? "" : "s"} (target ${prompt.wordTarget[0]}-${prompt.wordTarget[1]})`;
+    paintWordBar(wc);
   });
+  paintWordBar(0);
 
   timer = Countdown(prompt.timeLimitMin * 60,
     remaining => paintTimer("timerDisplay", remaining, prompt.timeLimitMin * 60),
@@ -783,6 +762,7 @@ function showWritingChecklist(skill, prompt, text, isExam, onComplete) {
     };
     if (isExam) { onComplete(result); return; }
     const attempt = Storage.saveAttempt({ type: "practice", skill: skill.id, mode: "writing", ...result, clb: selfClb });
+    Shell.focusMode.exit();
     app.innerHTML = "";
     app.appendChild(el(`
       <div class="card result-card">
@@ -800,6 +780,7 @@ function showWritingChecklist(skill, prompt, text, isExam, onComplete) {
 }
 
 function runSpeakingTask(skill, prompt, isExam, onComplete) {
+  Shell.focusMode.enter({ name: "Speaking practice", exam: isExam });
   const myScreen = screenId;  // this task's screen; see onScreen()
   app.innerHTML = "";
   app.appendChild(el(`
@@ -913,6 +894,7 @@ function runSpeakingTask(skill, prompt, isExam, onComplete) {
       };
       if (isExam) { onComplete(result); return; }
       const attempt = Storage.saveAttempt({ type: "practice", skill: skill.id, mode: "speaking", ...result, clb: selfClb });
+      Shell.focusMode.exit();
       app.innerHTML = "";
       app.appendChild(el(`
         <div class="card result-card">
@@ -977,11 +959,15 @@ route("exam", (rest) => {
 
 function startFullExam() {
   const results = { listening: null, reading: null, writing: [], speaking: [] };
+  const mcqSecs = { listening: [], reading: [] };  // seconds per question, one list per passage (goes into the attempt's timing)
   const examListening = sampleOnePerPart(LISTENING_DATA.passages, LISTENING_DATA.overview.parts.length);
   const examWriting = sampleExamWriting(WRITING_DATA.prompts);
   const examSpeaking = sampleOnePerSpeakingTask(SPEAKING_DATA.prompts);
 
+  // Closing the tab or reloading asks first through this browser warning. Leaving with the Exit button asks through
+  // the "Leave the exam?" box (Shell.focusMode.ask); both end up in render(), which switches this warning off again.
   window.onbeforeunload = () => "An exam is in progress. Leaving now will lose your progress.";
+  Shell.focusMode.enter({ name: "Timed Exam", exam: true, back: "#/exam" });
 
   runListeningSection(0, { correct: 0, total: 0 });
 
@@ -1021,13 +1007,17 @@ function startFullExam() {
         <div class="phase-box">
           <div class="phase-label">Playing audio (once)</div>
           <div class="rec-indicator">Listen carefully...</div>
+          ${listenBarHtml()}
         </div>
       `;
+      const bar = ListenBar(document.getElementById("listenBar"), passage.script, SPEECH_RATE);
+      activeTimers.push(bar);
+      bar.start();
       let done = false;
       const myScreen = screenId;
       const fallbackMs = Math.max(6000, (passage.script.split(/\s+/).length / 2.2) * 1000 + 3000);
       const fallback = setTimeout(() => { if (!done && onScreen(myScreen)) { done = true; renderAnswering(); } }, fallbackMs);
-      Speech.speak(passage.script, { onend: () => { if (!done && onScreen(myScreen)) { done = true; clearTimeout(fallback); renderAnswering(); } } });
+      Speech.speak(passage.script, { rate: SPEECH_RATE, onprogress: ci => bar.boundary(ci), onend: () => { bar.end(); if (!done && onScreen(myScreen)) { done = true; clearTimeout(fallback); renderAnswering(); } } });
     }
 
     function renderAnswering() {
@@ -1047,12 +1037,18 @@ function startFullExam() {
         </form>
         <div class="run-footer"><button class="btn btn-primary" id="nextBtn">Next Passage</button></div>
       `;
-      watchAnswered(document.getElementById("qForm"), document.getElementById("answeredCount"), passage.questions.length);
+      // Dots (no flags or "This question" clock in the exam: realismOn() is true there) and time per question.
+      const qs = { timer: QTimer(passage.questions.length), flags: [] };
+      const qt = mountQuestionTools(document.getElementById("qForm"), qs, { aids: !realismOn(), header: body.querySelector(".run-header") });
+      activeTimers.push(qt);
+      watchAnswered(document.getElementById("qForm"), document.getElementById("answeredCount"), passage.questions.length, (n, names) => qt.sync(names));
       const timer = Countdown(answerTime, r => paintTimer("timerDisplay", r, answerTime), () => finishPassage());
       timer.start();
       document.getElementById("nextBtn").onclick = () => { timer.stop(); finishPassage(); };
 
       function finishPassage() {
+        qt.stop();
+        mcqSecs.listening.push(qs.timer.all());
         const form = document.getElementById("qForm");
         let correct = 0;
         const examAnswers = [];
@@ -1073,7 +1069,9 @@ function startFullExam() {
     const passages = sampleOnePerPart(READING_DATA.passages, READING_DATA.overview.parts.length);
     let activeIdx = 0;
     const allAnswers = passages.map(p => new Array(p.questions.length).fill(null));
-    const marked = [];  // the passage text with your highlights, per passage, so switching tabs keeps them
+    // Per passage, kept while you switch tabs: highlights and notes (PassageTools state), flags and the question clock.
+    const tools = passages.map(p => ({ pt: PassageTools.newState(), qs: { timer: QTimer(p.questions.length), flags: new Array(p.questions.length).fill(false) } }));
+    let activeQt = null;  // the dots/clock of the tab on screen
     const totalQ = passages.reduce((a, p) => a + p.questions.length, 0);
     const answeredIn = i => allAnswers[i].filter(a => a !== null).length;
 
@@ -1098,12 +1096,13 @@ function startFullExam() {
     }
 
     function renderActive() {
+      if (activeQt) { activeQt.stop(); }  // the tab we are leaving stops counting (its seconds are kept)
       const p = passages[activeIdx];
       document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.i) === activeIdx));
       document.getElementById("readingBody").innerHTML = `
         <h2>${p.title}</h2>
         <div class="split">
-          <div class="split-passage" tabindex="0" role="region" aria-label="Passage">${highlighterBarHtml()}<div class="passage-text">${marked[activeIdx] || escapeHtml(p.text).replace(/\n/g, "<br>")}</div></div>
+          <div class="split-passage" tabindex="0" role="region" aria-label="Passage">${PassageTools.barHtml()}<div class="passage-text">${escapeHtml(p.text).replace(/\n/g, "<br>")}</div></div>
           <div class="split-questions"><form id="qForm">
           ${p.questions.map((q, qi) => `
             <div class="question-block">
@@ -1117,13 +1116,18 @@ function startFullExam() {
         </div>
       `;
       const idx = activeIdx;
+      const qt = mountQuestionTools(document.getElementById("qForm"), tools[idx].qs, { aids: !realismOn(), header: document.querySelector(".run-header") });
+      activeQt = qt; activeTimers.push(qt);
+      const names = () => new Set(allAnswers[idx].map((a, i) => a !== null ? "q" + i : null).filter(Boolean));
+      qt.sync(names());
       document.getElementById("qForm").addEventListener("change", e => {
         const match = e.target.name.match(/^q(\d+)$/);
         if (match) allAnswers[idx][parseInt(match[1])] = parseInt(e.target.value);
         paintCounts();
+        qt.sync(names());
       });
-      // marked[] only ever holds this passage's own (escaped) text plus <mark> tags the highlighter added.
-      enableHighlighter(document.querySelector("#readingBody .split-passage"), html => { marked[idx] = html; });
+      // The passage's marks and notes live in tools[idx].pt, so switching tabs and coming back keeps them.
+      PassageTools.attach(document.querySelector("#readingBody .split-passage"), tools[idx].pt);
     }
     document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => { activeIdx = parseInt(b.dataset.i); renderActive(); });
     renderActive();
@@ -1134,6 +1138,8 @@ function startFullExam() {
     document.getElementById("submitReading").onclick = () => { timer.stop(); submit(); };
 
     function submit() {
+      if (activeQt) activeQt.stop();
+      tools.forEach(t => mcqSecs.reading.push(t.qs.timer.all()));
       let correct = 0, total = 0;
       passages.forEach((p, pi) => {
         total += p.questions.length;
@@ -1170,6 +1176,7 @@ function startFullExam() {
 
   function finishExam() {
     window.onbeforeunload = null;
+    Shell.focusMode.exit();
     const listeningPct = results.listening.total ? Math.round((results.listening.correct / results.listening.total) * 100) : 0;
     const readingPct = results.reading.total ? Math.round((results.reading.correct / results.reading.total) * 100) : 0;
     const writingClb = Math.round(results.writing.reduce((a, r) => a + r.selfClb, 0) / (results.writing.length || 1));
@@ -1181,7 +1188,8 @@ function startFullExam() {
       speaking: { clb: speakingClb, tasks: results.speaking.length }
     };
     const overall = Math.round((breakdown.listening.clb + breakdown.reading.clb + breakdown.writing.clb + breakdown.speaking.clb) / 4);
-    const attempt = Storage.saveAttempt({ type: "exam", breakdown, overall });
+    // timing covers the multiple-choice sections only (Listening passages, then Reading passages): seconds per question.
+    const attempt = Storage.saveAttempt({ type: "exam", breakdown, overall, timing: buildTiming([...mcqSecs.listening, ...mcqSecs.reading]) });
 
     app.innerHTML = "";
     app.appendChild(el(`

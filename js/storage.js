@@ -42,6 +42,7 @@ const Storage = (() => {
     attempt.date = new Date().toISOString();
     // If the learner started a diagnostic for this skill, mark the attempt so the plan can use it.
     if (window.Study && Study.takeDiagnosticFlag && Study.takeDiagnosticFlag(attempt.skill)) attempt.diagnostic = true;
+    // Reading and Listening attempts also carry attempt.timing = { totalSec, perQuestionSec, perPassageSec } (see js/tools.js).
     history.push(attempt);
     write(HISTORY_KEY, history);
     return attempt;
@@ -52,7 +53,7 @@ const Storage = (() => {
 
   // Defaults first, then whatever was saved over the top (Object.assign merges them).
   function getSettings() {
-    const defaults = { targetCLB: 9, name: "", hoursPerWeek: 8, examDate: "", sessionMin: 75, speechToText: false }; // speechToText: opt-in, sends audio to an online service
+    const defaults = { targetCLB: 9, name: "", hoursPerWeek: 8, examDate: "", sessionMin: 75, speechToText: false, examRealism: false }; // speechToText: opt-in, sends audio to an online service; examRealism: hide highlighter, notes and flags in Practice
     return Object.assign({}, defaults, read(SETTINGS_KEY, {}));
   }
   function saveSettings(settings) { write(SETTINGS_KEY, settings); }
@@ -74,13 +75,79 @@ const Storage = (() => {
     Object.keys(KEYS).forEach(k => { out[k] = get(k, null); });
     return out;
   }
+  // LEARNING NOTE: a backup file is typed-in data we do not control, and screens print some of its values into the page.
+  // So on import we force numbers to be numbers inside a sensible range, accept only ids that look like the ones we make
+  // ("a_" + digits + "_" + letters/digits), and drop any history entry that is missing what the History screen needs.
+  const SKILL_IDS = ["listening", "reading", "writing", "speaking"];
+  function num(v, lo, hi, fallback) { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback; }
+  function cleanAttempt(h) {
+    if (!h || typeof h !== "object" || !/^a_\d{1,16}_[a-z0-9]{1,12}$/.test(String(h.id))) return null;
+    if (h.type !== "practice" && h.type !== "exam") return null;
+    if (isNaN(new Date(h.date))) return null;
+    const out = Object.assign({}, h);
+    ["pct", "clb", "overall", "correct", "total", "checklistScore", "checklistTotal"].forEach(k => {
+      if (out[k] !== undefined) { const n = num(out[k], 0, 1000, null); if (n === null) delete out[k]; else out[k] = n; }
+    });
+    if (h.type === "practice") { if (!SKILL_IDS.includes(h.skill)) return null; out.clb = h.clb === undefined || h.clb === null ? null : num(h.clb, 0, 12, null); } // a missing level stays null ("no score"), never 0
+    if (h.type === "exam") {
+      if (!h.breakdown || typeof h.breakdown !== "object") return null;
+      out.breakdown = {};
+      for (const id of SKILL_IDS) { if (!h.breakdown[id]) return null; out.breakdown[id] = Object.assign({}, h.breakdown[id], { clb: h.breakdown[id].clb === undefined || h.breakdown[id].clb === null ? null : num(h.breakdown[id].clb, 0, 12, null) }); }
+      out.overall = h.overall === undefined || h.overall === null ? null : num(h.overall, 0, 12, null);
+    }
+    return out;
+  }
+  function cleanSettings(st) {
+    const out = Object.assign({}, st);
+    delete out.apiKey;
+    if (out.targetCLB !== undefined) out.targetCLB = num(out.targetCLB, 4, 12, 9);
+    if (out.hoursPerWeek !== undefined) out.hoursPerWeek = num(out.hoursPerWeek, 2, 30, 8);
+    if (out.sessionMin !== undefined) out.sessionMin = num(out.sessionMin, 20, 240, 75);
+    return out;
+  }
+  // The other stores (turn C, after Inyene's review): each is rebuilt entry by entry from known shapes. An entry that does not
+  // fit is skipped and counted, so the Settings screen can say how many were left out.
+  const SAFE_ID = /^[A-Za-z0-9_-]{1,60}$/, DAY = /^\d{4}-\d{2}-\d{2}$/;
+  let skipped = 0;
+  const isObj = v => v && typeof v === "object" && !Array.isArray(v);
+  function cleanMap(src, keyOk, valueFn) {
+    const out = {};
+    if (!isObj(src)) return out;
+    for (const k of Object.keys(src)) {
+      const v = keyOk.test(k) ? valueFn(src[k]) : null;
+      if (v === null || v === undefined) skipped++; else out[k] = v;
+    }
+    return out;
+  }
+  const cleanPartStats = src => cleanMap(src, /^(listening|reading)\|[1-9]$/, v => {
+    if (!isObj(v)) return null;
+    const total = num(v.total, 0, 100000, null), right = num(v.right, 0, 100000, null);
+    return total === null || right === null || right > total ? null : { right, total };
+  });
+  const cleanMistakes = src => cleanMap(src, /^[a-z]+\|[A-Za-z0-9_-]{1,60}\|\d{1,3}$/, v => {
+    if (!isObj(v) || !SKILL_IDS.includes(v.skill) || !SAFE_ID.test(String(v.pid)) || !DAY.test(String(v.due))) return null;
+    return { skill: v.skill, pid: String(v.pid), qi: num(v.qi, 0, 200, 0), part: num(v.part, 1, 9, 1), box: num(v.box, 0, 6, 0), due: v.due, wrong: num(v.wrong, 0, 1000, 1) };
+  });
+  const cleanVocab = src => cleanMap(src, SAFE_ID, v => (isObj(v) && DAY.test(String(v.due)) ? { box: num(v.box, 0, 6, 0), due: v.due } : null));
+  const cleanGrammar = src => cleanMap(src, SAFE_ID, v => num(v, 0, 100, null));
+  function cleanLog(src) {
+    if (!Array.isArray(src)) return [];
+    const text = v => (typeof v === "string" ? v.slice(0, 2000) : "");
+    return src.map(e => {
+      if (!isObj(e) || !/^n_\d{1,16}$/.test(String(e.id)) || !DAY.test(String(e.date))) { skipped++; return null; }
+      return { id: e.id, date: e.date, minutes: num(e.minutes, 0, 1000, 0), skill: text(e.skill).slice(0, 40), learned: text(e.learned), unclear: text(e.unclear), next: text(e.next) };
+    }).filter(Boolean);
+  }
+  const CLEANERS = { partStats: cleanPartStats, mistakes: cleanMistakes, vocab: cleanVocab, grammar: cleanGrammar, log: cleanLog };
   function importAll(obj) {
+    skipped = 0;
     if (!obj || typeof obj !== "object") return false;
-    if (Array.isArray(obj.history)) write(HISTORY_KEY, obj.history);
-    if (obj.settings && typeof obj.settings === "object") { delete obj.settings.apiKey; write(SETTINGS_KEY, obj.settings); }
-    Object.keys(KEYS).forEach(k => { if (obj[k] !== undefined && obj[k] !== null) set(k, obj[k]); });
+    if (Array.isArray(obj.history)) { const kept = obj.history.map(cleanAttempt).filter(Boolean); skipped += obj.history.length - kept.length; write(HISTORY_KEY, kept); }
+    if (obj.settings && typeof obj.settings === "object") write(SETTINGS_KEY, cleanSettings(obj.settings));
+    Object.keys(KEYS).forEach(k => { if (obj[k] !== undefined && obj[k] !== null) set(k, CLEANERS[k] ? CLEANERS[k](obj[k]) : obj[k]); });
     return true;
   }
+  function importSkipped() { return skipped; } // how many entries the last import left out
   function resetAll() {
     try {
       localStorage.removeItem(HISTORY_KEY);
@@ -89,7 +156,7 @@ const Storage = (() => {
     } catch (e) {}
   }
 
-  return { getHistory, saveAttempt, deleteAttempt, clearHistory, getSettings, saveSettings, get, set, exportAll, importAll, resetAll };
+  return { getHistory, saveAttempt, deleteAttempt, clearHistory, getSettings, saveSettings, get, set, exportAll, importAll, importSkipped, resetAll };
 })();
 
 // Unofficial CLB estimate from a raw percentage score. For self-study orientation only.

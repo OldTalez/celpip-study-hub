@@ -2,11 +2,14 @@
    page. On the first visit it saves every file the app needs; after that, each file is fetched fresh when there is a
    connection (so updates arrive) and taken from the saved copy when there isn't (so the app works on a plane).
    It only runs when the app is opened from a website (https), not when index.html is opened as a file.
-   When a file is added to the app, add it to FILES too, and change CACHE's version number so phones fetch the list again. */
-const CACHE = "celpip-v2";
+   When a file is added to the app, add it to FILES too, and change CACHE's version number so phones fetch the list again.
+   v3 (T-029 turn A, 2026-11-05): added js/shell.js and the three font files in fonts/ (the new look works offline).
+   v4 (T-029 turn B, 2026-11-05): added js/tools.js (question dots, notes, toasts, progress bars). */
+const CACHE = "celpip-v4";
 const FILES = [
   "./", "index.html", "css/style.css", "manifest.webmanifest", "icon-192.png", "icon-512.png",
-  "js/storage.js", "js/scoring.js", "js/app.js", "js/study.js",
+  "js/shell.js", "js/storage.js", "js/scoring.js", "js/tools.js", "js/app.js", "js/study.js",
+  "fonts/PlusJakartaSans-latin.woff2", "fonts/AtkinsonHyperlegible-Regular-latin.woff2", "fonts/AtkinsonHyperlegible-Bold-latin.woff2", "fonts/OFL.txt",
   "js/data/listening.js", "js/data/listening_pool_1.js", "js/data/listening_pool_2.js", "js/data/listening_pool_3.js",
   "js/data/reading.js", "js/data/reading_pool_1.js", "js/data/reading_pool_2.js",
   "js/data/writing.js", "js/data/speaking.js", "js/data/writing_speaking_pool.js",
