@@ -342,7 +342,7 @@ function render() {
   lastRoute = path;
   const parts = path.split("/").filter(Boolean);
   const top = parts[0] || "dashboard";
-  Shell.beforeRender(top);       // ends focus mode, closes the More sheet, marks the current menu item
+  Shell.beforeRender(top);       // ends focus mode, closes the open menu, marks the current menu item
   const known = Object.hasOwn(routes, top);   // hasOwn: "#/__proto__" or "#/constructor" must not find the plain object's own members
   const name = known ? top : "dashboard", rest = known ? parts.slice(1) : [];
   app.innerHTML = "";            // the old screen goes now, so it can never be seen while new data loads
@@ -370,11 +370,13 @@ let lastRoute = null;
 function goToRoute() {
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!document.startViewTransition || reduced || lastRoute === null || currentRoute() === lastRoute) return render();
+  if (typeof PageWipe !== "undefined" && PageWipe.running()) return render();   // the circle wipe is covering the screen: it IS the transition, so no second one (T-033 B2b)
   const html = document.documentElement;
   html.classList.add("vt-route");  // the CSS only animates the screen while this class is on
   const done = () => html.classList.remove("vt-route");
   const t = document.startViewTransition(() => { render(); });  // no return value: the fade must not wait for slow data
   t.finished.then(done, done);
+  t.ready.catch(() => {});   // a newer change skips this one ("Transition was skipped"): that is fine, and must not be an uncaught error (T-033 B2b)
 }
 window.addEventListener("hashchange", goToRoute);
 document.addEventListener("click", e => {
@@ -1119,6 +1121,7 @@ function startFullExam() {
   runListeningSection(0, { correct: 0, total: 0 });
 
   function runListeningSection(index, tally) {
+    Shell.focusMode.setSection("Listening");   // the task bar shows "Timed Exam" over the part that is running
     if (index >= examListening.length) {
       results.listening = tally;
       return runReadingSection();
@@ -1213,6 +1216,7 @@ function startFullExam() {
   }
 
   function runReadingSection() {
+    Shell.focusMode.setSection("Reading");
     const passages = sampleOnePerPart(READING_DATA.passages, READING_DATA.overview.parts.length);
     let activeIdx = 0;
     const allAnswers = passages.map(p => new Array(p.questions.length).fill(null));
@@ -1299,6 +1303,7 @@ function startFullExam() {
   }
 
   function runWritingSection(index) {
+    Shell.focusMode.setSection("Writing");
     if (index >= examWriting.length) return runSpeakingSection(0);
     runWritingTask(skillById("writing"), examWriting[index], true, (result) => {
       results.writing.push(result);
@@ -1308,6 +1313,7 @@ function startFullExam() {
   }
 
   function runSpeakingSection(index) {
+    Shell.focusMode.setSection("Speaking");
     if (index >= examSpeaking.length) return finishExam();
     runSpeakingTask(skillById("speaking"), examSpeaking[index], true, (result) => {
       results.speaking.push(result);

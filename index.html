@@ -13,6 +13,8 @@
     AI-grading key were removed), a light and a dark theme, and a lot more study material.
     Look "A Lakeline" (2026-11-05, T-029 turn A): a left menu on wide screens, a bottom tab bar on phones, a Light / Dark / Auto
     theme switch, and fonts bundled in fonts/ (no outside server). See LEARNING-GUIDE.md.
+    Island navigation (2026-11-05, T-033 turn A): white and black themes, an icon rail and an island menu on wide screens, a top bar that collapses into a small floating island on scroll, and the logo as a link to Home. See LEARNING-GUIDE.md, "Island navigation".
+    T-033 B1a: on wide screens the sidebar or rail fades on scroll and its logo becomes a hamburger; on phones the bar melts into a pill, the bottom bar has four items and the menu opens a side drawer (the #sidebar). The old More sheet is gone.
     Installable app (2026-11-05, T-031 turn A): teal icons, iPhone full-screen tags, js/appfeel.js (install, update notice, offline label). See LEARNING-GUIDE.md, "Installing the app".
   -->
   <meta name="description" content="Free CELPIP self-study hub: practice, plan and track your progress. Unofficial, original material.">
@@ -20,19 +22,29 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow"> <!-- Board, 2026-11-05: keep the site out of search engines -->
   <title>CELPIP Study Hub</title>
+  <!-- T-033: ONE theme-color tag, with no media attribute. The old pair followed the phone's own light/dark setting, not the app's
+       Light / Dark / Auto choice, so the phone's status strip could disagree with the page. js/shell.js rewrites its content on every
+       theme change (it reads the page colour --bg from the CSS); the script below sets it before the first frame. -->
+  <meta name="theme-color" content="#FFFFFF" id="metaTheme">
   <!-- Runs before the page is drawn so the saved (or device) theme shows from the first frame, with no flash.
        "celpip_theme" holds light, dark or auto (a missing or odd value means auto = follow the device).
-       A try/catch is used because some browsers block localStorage in private windows. js/shell.js keeps this in step later. -->
+       It also decides which form of the wide menu is resting (data-nav: "pinned" island at 1200px and up unless the learner folded it, else "rail"),
+       so the menu does not jump after the first frame. A try/catch is used because some browsers block localStorage in private windows.
+       js/shell.js keeps all of this in step later. The two colours below are the page colours: keep them equal to --bg in css/style.css. -->
   <script>
     (function () {
-      var pref = "auto", resolved = "light";
+      var pref = "auto", resolved = "light", folded = false;
       try {
         var saved = localStorage.getItem("celpip_theme");
         if (saved === "light" || saved === "dark") pref = saved;
         resolved = pref === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : pref;
+        folded = localStorage.getItem("celpip_sidebar") === "folded";
       } catch (e) {}
-      document.documentElement.setAttribute("data-theme", resolved);
-      document.documentElement.setAttribute("data-theme-pref", pref);
+      var h = document.documentElement;
+      h.setAttribute("data-theme", resolved);
+      h.setAttribute("data-theme-pref", pref);
+      h.setAttribute("data-nav", window.innerWidth >= 1200 && !folded ? "pinned" : "rail");
+      document.getElementById("metaTheme").setAttribute("content", resolved === "dark" ? "#000000" : "#FFFFFF");
     })();
   </script>
   <!-- The reading font is fetched early so the first text does not wait for it (it is bundled in fonts/, no outside server). -->
@@ -43,14 +55,11 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="apple-touch-icon-180.png">
-  <!-- iPhone and iPad: open from the Home Screen like an app (no Safari bars), with a short name under the icon. "default" status bar = dark text on the light bar. -->
+  <!-- iPhone and iPad: open from the Home Screen like an app (no Safari bars), with a short name under the icon. "black-translucent" (Board, D1, 2026-11-05) lets the page colour show behind the status bar, so the strip matches the theme. Known iOS limit: the clock and battery are then always white, even on the white page (see DEVICE-CHECKLIST.md). -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="CELPIP">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <!-- js/shell.js rewrites these two to the colour of the theme that is showing -->
-  <meta name="theme-color" content="#f2f6f8" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0a171d" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
   <!-- Icon sprite: small line drawings drawn once and reused with <use>. They take the text colour. Hidden from screen readers. -->
@@ -75,49 +84,87 @@
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1"/></symbol>
     <symbol id="i-offline" viewBox="0 0 24 24"><path d="M3 3l18 18M8.5 16.4a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 3-2M12 20h.01M19 12.9a10 10 0 0 0-8-2.9"/></symbol>
     <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M6 6l6 6-6 6M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/></symbol>
+    <!-- The app's logo mark (speech bubble with a C). It takes the accent colours, so it follows the theme. -->
+    <symbol id="i-mark" viewBox="0 0 36 36"><rect width="36" height="36" rx="11" fill="var(--accent-fill)"/><path d="M8 11a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-8l-6 5v-5a3 3 0 0 1-3-3z" fill="var(--accent-ink)"/><path d="M22.4 13a4.5 4.5 0 1 0 0 5" fill="none" stroke="var(--accent-fill)" stroke-width="2.4" stroke-linecap="round"/></symbol>
   </defs></svg>
 
-  <a class="skip-link" href="#app">Skip to content</a>
+  <a class="skip-link" id="skip" href="#app">Skip to content</a>
 
-  <!-- Wide screens (1000px and up): left menu. Hidden on phones by the CSS. -->
-  <aside class="sidebar" id="sidebar">
-    <div class="side-head"><button class="icon-btn menu-btn" type="button" data-menu-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Hide menu" title="Hide menu" id="menuBtn"><svg class="ico-svg" aria-hidden="true"><use href="#i-menu"/></svg></button><div class="brand">CELPIP<br>Study Hub</div></div>
-    <div class="profile-wrap" data-profile-switch></div>
+  <!-- Icon rail (1000px and up, when the island is not pinned). Built by js/shell.js from the island's own page list below, so the two cannot drift apart. -->
+  <nav class="rail" id="rail" aria-label="Main"></nav>
+
+  <!-- Island (1000px and up): the full menu. Pinned at 1200px and up, or opened over the rail on a dimmed page (the X closes or folds it). Hidden on phones by the CSS.
+       The theme switch is NOT here any more: the theme button is top right on every screen (T-033 point 4). -->
+  <aside class="sidebar" id="sidebar" aria-label="Menu" inert>
+    <div class="isl-head">
+      <a class="logo" href="#/dashboard" data-logo aria-label="CELPIP Study Hub, go to Home"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg><span>CELPIP<br>Study Hub</span></a>
+      <button class="icon-btn" type="button" id="islandX" data-island-x aria-label="Collapse menu to icons" title="Collapse menu to icons"><svg class="ico-svg" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <p class="grp only-phone">More pages</p>
     <nav id="mainNav" aria-label="Main">
-      <a href="#/dashboard" data-section="dashboard"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg>Home</a>
-      <a href="#/learn" data-section="learn"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn</a>
-      <a href="#/practice" data-section="practice"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg>Practice</a>
-      <a href="#/review" data-section="review"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg>Review</a>
-      <a href="#/vocab" data-section="vocab"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words</a>
-      <a href="#/grammar" data-section="grammar"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar</a>
-      <a href="#/notes" data-section="notes"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes</a>
-      <a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>My plan</a>
-      <a href="#/exam" data-section="exam"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg>Timed Exam</a>
-      <a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a>
-      <a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a>
+      <a href="#/dashboard" data-section="dashboard" style="--i:0"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg>Home<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/learn" data-section="learn" style="--i:1"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/practice" data-section="practice" style="--i:2"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg>Practice<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/review" data-section="review" style="--i:3"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg>Review<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/vocab" data-section="vocab" style="--i:4"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/grammar" data-section="grammar" style="--i:5"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/notes" data-section="notes" style="--i:6"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/plan" data-section="plan" style="--i:7"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>My plan<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/exam" data-section="exam" style="--i:8"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg>Timed Exam<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/history" data-section="history" style="--i:9"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
+      <a href="#/settings" data-section="settings" style="--i:10"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings<span class="go" aria-hidden="true"><svg><use href="#i-arrow"/></svg></span></a>
     </nav>
-    <p class="offline-pill" data-offline-pill hidden></p>
-    <button type="button" class="btn btn-quiet kbd-only" data-shortcut-sheet>Keyboard shortcuts (?)</button>
-    <div class="seg-wrap" data-theme-switch></div>
-  </aside>
-
-  <div class="content">
-    <!-- Top bar: on phones (below 1000px) it is always there; on wide screens it appears only while the sidebar is folded (hamburger shows the menu again). The button cycles the theme Light, Dark, Auto. -->
-    <header class="topbar" id="topbar">
-      <button class="icon-btn menu-btn" type="button" data-menu-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Hide menu" title="Hide menu" id="menuBtnTop"><svg class="ico-svg" aria-hidden="true"><use href="#i-menu"/></svg></button>
-      <div class="brand">CELPIP Study Hub</div>
+    <div class="isl-foot">
+      <div class="profile-wrap" data-profile-switch></div>
       <p class="offline-pill" data-offline-pill hidden></p>
-      <button class="icon-btn" id="themeBtn" type="button" aria-label="Theme: Auto, change">
-        <svg class="ico-svg" aria-hidden="true"><use href="#i-theme"/></svg>
+      <!-- Phone drawer only (the old More sheet's install button moved here; the theme button in the bar and pill cycles Light, Dark, Auto). -->
+      <div class="dlg-body install-box only-phone" data-install-box hidden></div>
+      <button type="button" class="btn btn-quiet kbd-only" data-shortcut-sheet>Keyboard shortcuts (?)</button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" aria-hidden="true"></div>
+  <div class="status-strip" aria-hidden="true"></div>
+
+  <!-- Phones: the collapsed top bar is a small floating pill (menu, Home mark, theme) centred at the top. The top bar's own controls slide into it and fade (css/style.css, "The phone pill").
+       The row only gives the pill its place; it does not catch clicks. Unreachable (inert) until the bar collapses. -->
+  <div class="pillrow"><div class="mini" id="mini" role="group" aria-label="Quick controls" inert>
+    <button class="icon-btn" type="button" data-menu-open aria-label="Open menu" aria-expanded="false" aria-controls="sidebar"><svg class="ico-svg hb" aria-hidden="true" viewBox="0 0 24 24"><path class="l1" d="M4 6h16"/><path class="l2" d="M4 12h16"/><path class="l3" d="M4 18h16"/></svg></button>
+    <a class="logo-only" href="#/dashboard" data-logo aria-label="CELPIP Study Hub, go to Home"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg></a>
+    <button class="icon-btn" type="button" data-theme-btn aria-label="Theme: Auto, change"><svg class="ico-svg" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-theme"/></svg></button>
+  </div></div>
+
+  <div class="content" id="content">
+    <!-- Top bar: always there (56px on phones, 48px on wide screens), except in focus mode. Phones show the wordmark (a link to Home); the theme button
+         is top right on every width and cycles Light, Dark, Auto. It sticks to the top together with the page title (see "The sticky stack" in css/style.css). -->
+    <header class="topbar" id="topbar">
+      <button class="icon-btn menu-btn" type="button" data-menu-open aria-label="Open menu" aria-expanded="false" aria-controls="sidebar"><svg class="ico-svg hb" aria-hidden="true" viewBox="0 0 24 24"><path class="l1" d="M4 6h16"/><path class="l2" d="M4 12h16"/><path class="l3" d="M4 18h16"/></svg></button>
+      <a class="brand-top" href="#/dashboard" data-logo aria-label="CELPIP Study Hub, go to Home">CELPIP Study Hub</a>
+      <span class="sp"></span>
+      <p class="offline-pill" data-offline-pill hidden></p>
+      <button class="icon-btn" id="themeBtn" type="button" data-theme-btn aria-label="Theme: Auto, change">
+        <svg class="ico-svg" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-theme"/></svg>
       </button>
     </header>
 
     <!-- Focus mode: shown only while a practice run or the exam is going (the menus are hidden then). -->
     <div class="taskbar" id="taskBar">
-      <button class="btn btn-quiet" id="exitBtn" type="button"><svg class="ico-svg" aria-hidden="true"><use href="#i-x"/></svg>Exit</button>
-      <span class="task-name" id="taskName"></span>
+      <a class="logo-only" href="#/dashboard" data-logo aria-label="CELPIP Study Hub, go to Home"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg></a>
+      <button class="btn btn-quiet" id="exitBtn" type="button"><svg class="ico-svg" aria-hidden="true"><use href="#i-x"/></svg><span class="lbl">Exit</span></button>
+      <span class="task-name" id="taskName"><span class="n1"></span><span class="n2"></span></span>
     </div>
 
+  <div class="pagewipe" id="pagewipe" aria-hidden="true" hidden></div> <!-- the circle wipe disc (js/pagewipe.js): decorative, no text -->
   <main id="app" tabindex="-1"></main>
   <div id="toastHost" class="toast-host" role="status" aria-live="polite"></div> <!-- short status messages ("Settings saved"); see toast() in js/tools.js -->
   <div id="announcer" class="sr-only" aria-live="assertive"></div> <!-- timers say "1:00 left" here for screen readers -->
@@ -128,31 +175,20 @@
   </footer>
   </div><!-- /.content -->
 
-  <!-- Phones: bottom tab bar. More opens a sheet with the other seven pages. -->
+  <!-- Wide screens: the logo that turns into a hamburger. js/shell.js (placeAnchor) puts it exactly over the sidebar's or rail's logo mark. While the page is at the top it is invisible and the real logo shows;
+       when the sidebar fades on scroll it appears over the same spot, the logo turns out and a hamburger turns in. Inert unless the page is scrolled down. -->
+  <button class="anchor" id="anchor" type="button" data-menu-open aria-label="Open menu" aria-expanded="false" aria-controls="sidebar" inert>
+    <span class="a-logo" aria-hidden="true"><svg class="mark"><use href="#i-mark"/></svg></span>
+    <span class="a-hb" aria-hidden="true"><svg class="ico-svg hb" viewBox="0 0 24 24"><path class="l1" d="M4 6h16"/><path class="l2" d="M4 12h16"/><path class="l3" d="M4 18h16"/></svg></span>
+  </button>
+
+  <!-- Phones: the floating bottom bar, exactly four items (Board ruling, T-033). Every other page is in the side drawer (the #sidebar, opened by the menu button). -->
   <nav class="tabbar" id="tabBar" aria-label="Sections">
     <a href="#/dashboard" data-section="dashboard"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg></span>Home</a>
     <a href="#/practice" data-section="practice"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg></span>Practice</a>
-    <a href="#/review" data-section="review"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg></span>Review</a>
+    <a href="#/plan" data-section="plan"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg></span>My plan</a>
     <a href="#/exam" data-section="exam"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg></span>Exam</a>
-    <button type="button" id="moreBtn" aria-haspopup="dialog"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-more"/></svg></span>More</button>
   </nav>
-
-  <dialog class="sheet" id="moreSheet" aria-labelledby="moreTitle">
-    <div class="dlg-body"><h2 id="moreTitle">More</h2></div>
-    <ul class="sheet-list">
-      <li><a href="#/learn" data-section="learn"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn</a></li>
-      <li><a href="#/vocab" data-section="vocab"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words</a></li>
-      <li><a href="#/grammar" data-section="grammar"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar</a></li>
-      <li><a href="#/notes" data-section="notes"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes</a></li>
-      <li><a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>My plan</a></li>
-      <li><a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a></li>
-      <li><a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a></li>
-    </ul>
-    <div class="profile-wrap" data-profile-switch></div>
-    <div class="dlg-body install-box" data-install-box hidden></div>
-    <div class="seg-wrap" data-theme-switch></div>
-    <div class="dlg-actions"><button class="btn" type="button" data-close-sheet>Close</button></div>
-  </dialog>
 
   <!-- "Leave?" question for the Exit button. Keep going is the main choice and has focus first. -->
   <dialog id="confirmDlg" aria-labelledby="confirmTitle" aria-describedby="confirmText">
@@ -171,7 +207,9 @@
   <script src="js/data/meta.js" defer></script>
   <script src="js/loader.js" defer></script>
   <script src="js/shell.js" defer></script>
+  <script src="js/pagewipe.js" defer></script> <!-- the circle wipe when a menu page is pressed, and its Settings switch (needs Shell; app.js and study.js check it) -->
   <script src="js/profiles.js" defer></script> <!-- who is studying: the profile list, key names, migration (must come before storage.js) -->
+  <script src="js/navlayout.js" defer></script> <!-- the Arrange menu setting: order of the pages and the four bottom-bar pages, per profile, strictly checked (needs Profiles; storage.js uses it to check imports) -->
   <script src="js/storage.js" defer></script>
   <script src="js/prescription.js" defer></script>
   <script src="js/calendar.js" defer></script>
@@ -183,6 +221,7 @@
   <script src="js/shortcuts.js" defer></script> <!-- desktop keyboard shortcuts and the tap buzz (needs Storage) -->
   <script src="js/appfeel.js" defer></script> <!-- install button, update notice, offline label, storage safety, icon badge (needs Toast, Storage and Study above) -->
   <script src="js/transfer.js" defer></script> <!-- share the backup file and move a profile by QR codes (loads its QR libraries from js/vendor/ only when a QR screen opens) -->
+  <script src="js/arrange.js" defer></script> <!-- the Arrange menu card in Settings (needs NavLayout and Shell) -->
   <script src="js/profile-ui.js" defer></script> <!-- profile button, "Who's studying?" chooser, Profiles card in Settings (needs Profiles, Shell, Study) -->
   <!-- The offline helper (sw.js) is registered by js/appfeel.js, which also shows the "New version ready" notice. -->
 </body>

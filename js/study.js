@@ -1046,12 +1046,17 @@
         <label class="field-label" for="examDateInput">Test date (optional)</label><input type="date" id="examDateInput" value="${escapeHtml(st.examDate)}">
         <div class="cta-row-single"><button class="btn btn-primary" id="saveSettings">Save</button></div>
       </div>
-      <p class="muted small mt" id="themeHint">Theme: use the sun, moon or half-circle button in the menu.</p>
+      <div id="arrangeCard"></div>
+      <p class="muted small mt" id="themeHint">Theme: use the sun, moon or half-circle button at the top right.</p>
       <div class="card mt install-box" data-install-box hidden></div>
       <div class="card mt"><h3>Practise like the real test</h3>
         <label class="check-row"><input type="checkbox" id="realismToggle" ${st.examRealism ? "checked" : ""}><span class="sw-text">Practise like the real test: hide highlighter, notes and flags</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
         <p class="muted small">Turns off the study aids so practice feels like test day. The question dots stay. The Timed Exam always works this way, whatever this switch says.</p>
         <p id="realismMsg" class="muted small" role="status"></p>
+      </div>
+      <div class="card mt"><h3>Page transition</h3>
+        <label class="check-row"><input type="checkbox" id="pagewipeToggle" ${typeof PageWipe === "undefined" || PageWipe.isOn() ? "checked" : ""}><span class="sw-text">Play a circle wipe when I pick a page from the menu</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
+        <p class="muted small">A short animation, about half a second. It is never used in practice or the Timed Exam, or when your device asks for reduced motion. It applies on this device only.</p>
       </div>
       <div class="card mt"><h3>Vibrate on tap</h3>
         ${typeof navigator.vibrate === "function" ? `<label class="check-row"><input type="checkbox" id="vibrateToggle" ${st.vibrate !== false ? "checked" : ""}><span class="sw-text">A light buzz when I pick an answer or flag a question</span><span class="sw-word sw-off" aria-hidden="true">Off</span><span class="sw-word sw-on" aria-hidden="true">On</span></label>
@@ -1096,8 +1101,10 @@
       document.getElementById("realismMsg").textContent = e.target.checked ? "On. Highlighter, notes and flags are hidden in practice." : "Off. Highlighter, notes and flags are available in practice.";
       toast(e.target.checked ? "Practising like the real test" : "Study aids back on", "info");
     };
+    if (window.Arrange) Arrange.mount(document.getElementById("arrangeCard"));   // arrange.js loads after this file, so on a reload it fills the card itself
     if (window.ProfileUI) ProfileUI.mountManage(document.getElementById("profilesCard"));
     if (window.Transfer) Transfer.mountCard(document.getElementById("transferCard"));  // profile-ui.js loads after this file, so on a reload it fills the card itself
+    document.getElementById("pagewipeToggle").onchange = e => { if (typeof PageWipe !== "undefined") PageWipe.setOn(e.target.checked); toast(e.target.checked ? "Page transition on" : "Page transition off", "info"); };
     const vib = document.getElementById("vibrateToggle");
     if (vib) vib.onchange = e => { Storage.saveSettings({ ...Storage.getSettings(), vibrate: e.target.checked }); toast(e.target.checked ? "Vibration on" : "Vibration off", "info"); };
     document.getElementById("exportBtn").onclick = () => {

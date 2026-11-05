@@ -164,3 +164,7 @@ What I saw:
 What I saw: 
 
 Related: [[Celpip Test v2/LEARNING-GUIDE]]
+
+## T-033 turn A: light-theme status bar (iPhone, decision D1)
+- [ ] Add the app to the Home Screen, remove it and add it again (an old copy can keep its old status bar style). In the light theme, check the page colour reaches the top of the screen and note whether the clock and battery are readable (iOS draws them white with `black-translucent`, so white on white is expected; report how bad it looks). In the dark theme the strip should be black.
+- [ ] Switch Light, Dark and Auto with the top-right button: the strip colour should follow the app, not the phone's setting.

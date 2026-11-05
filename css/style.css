@@ -1,5 +1,6 @@
 /*
  * LEARNING NOTE (for beginners): CSS controls how the page looks.
+ * T-033 turn A (2026-11-05): white and black themes, card tokens and the spacing scale (section 2), the icon rail, the island menu, the sticky top bar plus title and the collapsing floating island (section 4).
  * T-031 turn A (2026-11-05): section 9 at the end holds the install box, offline pill and phone mastery grid; bars use env(safe-area-inset-*) to clear the iPhone notch and home bar.
  * Each rule looks like:  selector { property: value; }  (the selector says WHAT to style).
  * The :root block below defines named values ("variables" or "tokens") such as --accent. Elsewhere they are used as
@@ -31,66 +32,94 @@
 @font-face { font-family: "Atkinson Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 97.2%; ascent-override: 97.7%; descent-override: 29.8%; line-gap-override: 0%; }
 @font-face { font-family: "Jakarta Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 106.4%; ascent-override: 97.6%; descent-override: 20.9%; line-gap-override: 0%; }
 
-/* ---------- 2. Tokens ---------- */
+/* ---------- 2. Tokens ----------
+   T-033 turn A (2026-11-05): the page is pure white in the light theme and pure black in the dark theme (black pixels are off on an OLED
+   screen). Cards are white with a hairline and a soft shadow in light, and #0E0E0E with a hairline in dark. Values come from
+   Company/Work/2026-11-05 T-033 island-nav/design-spec.md, section 1; tools/check-contrast.js checks every pair. Keep --bg equal to
+   the theme-color the shell sets (js/shell.js reads it from here, so there is one place to change). */
 :root {
   color-scheme: light;
-  --bg: #f2f6f8;
-  --surface: #ffffff;       /* cards */
-  --surface-2: #e5edf1;     /* quiet panels, tracks, hover rows */
-  --text: #0f2430;
-  --muted: #44606d;
-  --line: #cfdce3;          /* hairlines (decorative only) */
-  --ctl: #5c7886;           /* outlines of form controls (3:1 or more on bg and surface) */
-  --accent: #0b6477;        /* the accent as text, link, icon, bar, focus ring */
-  --accent-fill: #0b6477;   /* the accent as a fill behind buttons and badges */
-  --accent-ink: #ffffff;    /* text on --accent-fill */
-  --good: #1a7a45;          /* correct, done (icon, border) */
-  --bad: #b3261e;           /* incorrect (icon, border) */
-  --mark: #cdeef5;          /* highlighter marks in a passage (text stays --text) */
-  --chart-4: #2d6a8f;       /* fourth chart line; the lines also differ by dash pattern */
-  --shadow-float: 0 2px 4px rgba(15, 36, 48, .08), 0 12px 32px rgba(15, 36, 48, .16);
-  --backdrop: rgba(15, 36, 48, .45);
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;       /* cards, island, rail, dialogs */
+  --surface-2: #F0F4F6;     /* quiet panels, tracks, hover and selected rows */
+  --text: #0F2430;
+  --muted: #44606D;
+  --line: #D5DEE3;          /* hairlines (decorative only) */
+  --ctl: #5C7886;           /* outlines of form controls (3:1 or more on bg and surface) */
+  --wipe: #0B6477;          /* the circle-wipe page change disc (js/pagewipe.js): decorative, carries no text, so it has no contrast pair */
+  --accent: #0B6477;        /* the accent as text, link, icon, bar, focus ring */
+  --accent-fill: #0B6477;   /* the accent as a fill behind buttons and badges */
+  --accent-ink: #FFFFFF;    /* text on --accent-fill */
+  --good: #1A7A45;          /* correct, done (icon, border) */
+  --bad: #B3261E;           /* incorrect (icon, border) */
+  --mark: #CDEEF5;          /* highlighter marks in a passage (text stays --text) */
+  --chart-4: #2D6A8F;       /* fourth chart line; the lines also differ by dash pattern */
+  --card-shadow: 0 1px 2px rgba(15, 36, 48, .05), 0 6px 20px rgba(15, 36, 48, .07);   /* cards, rail, pinned island: at rest */
+  --shadow-float: 0 2px 4px rgba(15, 36, 48, .08), 0 16px 40px rgba(15, 36, 48, .18); /* open island, dialogs, tooltip, floating bar */
+  --scrim: rgba(15, 36, 48, .45);   /* the dimmed page behind an overlay menu or dialog */
+  --backdrop: var(--scrim);
+  --tip-bg: #0F2430;        /* rail tooltip: the inverse surface, like the toast */
+  --tip-ink: #FFFFFF;
+  --wipe: #0B6477;          /* colour of the page-change disc (Turn B); carries no text */
 
-  --radius: 16px;           /* cards */
+  --radius: 20px;           /* cards */
   --radius-btn: 999px;      /* buttons, tabs */
   --radius-chip: 50%;       /* question dots and small chips */
   --bw: 2px;                /* control border width */
-  --tile-border: 0 solid transparent;
+  --tile-border: 1px solid var(--line);
   --heading-weight: 800;
 
   --font: "Atkinson Hyperlegible", "Atkinson Fallback", system-ui, sans-serif;
   --serif: "Plus Jakarta Sans", "Jakarta Fallback", system-ui, sans-serif; /* name kept from the old design: it is the HEADING face */
-  --gut: clamp(1rem, 4vw, 2rem);
 
-  /* One motion scale for the whole product (standard section 2). Only transform, opacity and colours animate. */
+  /* Spacing scale (T-033 point 8): base unit 4px. Nothing in the layout uses a value outside this scale. */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px; --s9: 48px; --s10: 64px; --s11: 80px; --s12: 96px;
+  --gut: clamp(20px, 5vw, 56px);   /* page side padding: 20 on a phone, 56 on a big screen */
+
+  /* One motion scale for the whole product (standard section 2). Only transform, opacity, clip-path and colours animate. */
   --dur-1: 100ms;   /* press feedback */
   --dur-2: 180ms;   /* hover colour, focus ring, anything leaving */
   --dur-3: 280ms;   /* moving indicators, menus entering, header, screen change */
-  --dur-4: 420ms;   /* entering or leaving focus mode, bottom sheet */
+  --dur-4: 420ms;   /* entering or leaving focus mode, island opening */
   --ease-out: cubic-bezier(.2, .7, .2, 1);   /* entering or growing */
   --ease-io: cubic-bezier(.4, 0, .2, 1);     /* moving between two places, colour changes */
   --ease-in: cubic-bezier(.4, 0, 1, 1);      /* leaving */
 
-  --side-w: 208px;
+  /* Frame sizes. --off is how far the page is pushed right to make room for the pinned island (304 = 16 gap + 264 island + 24 gap)
+     or the rail (112 = 16 + 72 + 24). It is 0 below 1000px, where the phone layout is used. */
+  --sat: env(safe-area-inset-top, 0px);       /* the iPhone notch area */
+  --topbar-h: 56px;
+  --isl-gap: 16px; --rail-w: 72px; --isl-w: 264px;
+  --off: 0px;
+}
+@media (min-width: 1000px) {
+  :root { --topbar-h: 48px; }
+  html[data-nav="pinned"] { --off: 304px; }
+  html[data-nav="rail"] { --off: 112px; }
 }
 html[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0a171d;
-  --surface: #12242c;
-  --surface-2: #1b333d;
-  --text: #e8f3f7;
-  --muted: #9bb5c0;
-  --line: #244551;
-  --ctl: #6d8f9d;
-  --accent: #4cc3d9;
-  --accent-fill: #4cc3d9;
-  --accent-ink: #06222a;
-  --good: #5fd08b;
-  --bad: #ff8f86;
-  --mark: #1f5a68;
-  --chart-4: #8cc3e8;
-  --shadow-float: 0 2px 4px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .5);
-  --backdrop: rgba(0, 0, 0, .6);
+  --bg: #000000;
+  --surface: #0E0E0E;
+  --surface-2: #1A1A1A;
+  --text: #F2F6F8;
+  --muted: #A3B8C2;
+  --line: #2E2E2E;
+  --ctl: #7F8E96;
+  --wipe: #0B3A45;
+  --accent: #4CC3D9;
+  --accent-fill: #4CC3D9;
+  --accent-ink: #06222A;
+  --good: #5FD08B;
+  --bad: #FF8F86;
+  --mark: #1F5A68;
+  --chart-4: #8CC3E8;
+  --card-shadow: none;      /* a shadow cannot show on black; the hairline does the job */
+  --shadow-float: 0 0 0 1px #2E2E2E, 0 16px 40px rgba(0, 0, 0, .85);
+  --scrim: rgba(0, 0, 0, .6);
+  --tip-bg: #F2F6F8;
+  --tip-ink: #000000;
+  --wipe: #0B3A45;
 }
 /* Reduced motion (standard section 3): every duration becomes zero, so nothing travels. Fades that carry meaning keep 100ms. */
 @media (prefers-reduced-motion: reduce) {
@@ -99,10 +128,12 @@ html[data-theme="dark"] {
 
 /* ---------- 3. Base ---------- */
 * { box-sizing: border-box; }
-html { --bar-h: calc(64px + env(safe-area-inset-top, 0px)); /* height of the sticky screen bar (wide) or top bar (phone); scroll-padding follows it */ }
-html { font-size: 100%; scroll-padding-top: calc(var(--bar-h) + 12px); } /* anchor jumps and focus never land under the sticky bar */
-html[data-scrolled="1"] { --bar-h: calc(48px + env(safe-area-inset-top, 0px)); }
-html:has(body[data-mode="focus"]) { --bar-h: calc(60px + env(safe-area-inset-top, 0px)); } /* the task bar height */
+/* --stack-h is the height of what sticks to the top: the top bar plus the page title (or the task bar in focus mode, or nothing but the notch
+   area while the bar is collapsed). js/shell.js measures the real height into --stack-measured; the number after the comma is the fallback. */
+html { --stack-h: var(--stack-measured, calc(var(--topbar-h) + 64px + env(safe-area-inset-top, 0px))); }
+html { font-size: 100%; scroll-padding-top: calc(var(--stack-h) + 12px); } /* anchor jumps and focus never land under the sticky bar */
+html[data-collapsed="1"] { --stack-h: env(safe-area-inset-top, 0px); } /* the bar has slid away; sticky things may move up */
+html:has(body[data-mode="focus"]) { --stack-h: calc(64px + env(safe-area-inset-top, 0px)); } /* the task bar height */
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); overscroll-behavior-y: contain; } /* a drag down at the top of the page does not pull-to-refresh, so a swipe cannot reload the app in the middle of an exam */
 body { font: 1.0625rem/1.5 var(--font); -webkit-font-smoothing: antialiased; }
 /* tabular-nums: digits share one width, so columns and counting timers do not jiggle. Only used where numbers line up or change:
@@ -123,40 +154,107 @@ a:active { color: color-mix(in srgb, var(--accent), var(--text) 20%); }
 @media (hover: hover) { a:hover { text-decoration-thickness: 3px; } }
 a[aria-current="page"] { font-weight: 700; }
 
-/* ---------- 4. Shell: sidebar (wide), top bar and bottom tabs (phone), sheet, dialogs, focus-mode task bar ---------- */
+/* ---------- 4. Shell: rail and island (wide), top bar and bottom tabs (phone), sheet, dialogs, focus-mode task bar ----------
+   T-033 turn A. On a screen 1000px wide or more there are two forms of the menu: the ICON RAIL (72px, icons only, names shown as a
+   tooltip on hover and keyboard focus) and the ISLAND (264px, icons, names and a round arrow chip). The island is either PINNED (always
+   there, 1200px and up, the default) or an OVERLAY that opens from the rail on a dimmed page. <html data-nav="pinned|rail"> says which
+   form is resting; <html data-overlay="open"> says the island is open over the rail. js/shell.js sets both. Below 1000px neither shows:
+   the top bar and the bottom tabs are used (the phone drawer is turn B). */
 .content { min-width: 0; }
+/* THE COLUMN (T-033 B1a, Board 2026-11-05). The page content is centred in the WHOLE window and never depends on the menu: --col is the column width
+   (at most 1200px, and always leaving the same free space --off on BOTH sides for the pinned island or the rail), --edge is how far in the
+   text starts. The island or rail fading, or the page scrolling, never changes them; only folding or pinning the island does (--off changes,
+   and the class "glide" on <html> lets the width animate for that one click). --off is 0 on a phone, so there the column is the window. */
+:root { --col: min(1200px, calc(100% - 2 * var(--off))); --edge: calc((100% - var(--col)) / 2 + var(--gut)); }
+html.glide main#app, html.glide .app-footer { transition: max-width var(--dur-4) var(--ease-io); }
+html.glide .topbar { transition: padding var(--dur-4) var(--ease-io); }
 
-.sidebar { display: none; }
-.sidebar .brand, .topbar .brand { font: var(--heading-weight) 1.125rem/1.15 var(--serif); letter-spacing: -.01em; color: var(--text); }
-.side-head { display: flex; align-items: center; gap: 8px; padding: 0 0 16px; }
-.sidebar .brand { padding: 4px 4px; }
-.topbar .brand { margin-right: auto; }
-.topbar .menu-btn { display: none; } /* only wide screens fold the menu; see the min-width block below */
 .nav-ico { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ico-svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mark { width: 36px; height: 36px; flex: none; display: block; }
+/* The logo is always a link to Home (asks first during practice or the exam: js/shell.js). */
+.logo { display: flex; align-items: center; gap: var(--s3); min-height: 48px; padding: 0 var(--s1); border-radius: 14px; color: var(--text); text-decoration: none; font: var(--heading-weight) 1.0625rem/1.1 var(--serif); letter-spacing: -.01em; }
+.logo-only { width: 48px; height: 48px; display: grid; place-items: center; flex: none; border-radius: 14px; text-decoration: none; }
+.logo:focus-visible, .logo-only:focus-visible { outline-offset: 2px; }
 
-/* Sidebar item (wide): 44px rows. Selected = surface-2 background + a 4px accent bar + bold + aria-current (never colour alone). */
-nav#mainNav { display: flex; flex-direction: column; gap: 2px; }
-nav#mainNav a, .sheet-list a { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: calc(var(--radius) * .6); color: var(--muted); font: 700 .9375rem var(--font); text-decoration: none; }
-nav#mainNav a::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 4px; background: var(--accent); transform: scaleY(0); transition: transform var(--dur-3) var(--ease-out); }
-nav#mainNav a:focus-visible, .sheet-list a:focus-visible { outline-offset: -3px; }
-@media (hover: hover) { nav#mainNav a:hover:not([aria-current="page"]), .sheet-list a:hover:not([aria-current="page"]) { background: var(--surface-2); } }
-nav#mainNav a[aria-current="page"], .sheet-list a[aria-current="page"] { background: var(--surface-2); color: var(--text); font-weight: 800; }
+/* Island (the wide menu). One element, #sidebar. */
+.sidebar { display: flex; flex-direction: column; position: fixed; z-index: 50; left: var(--isl-gap); top: calc(var(--isl-gap) + var(--sat)); bottom: var(--isl-gap); width: var(--isl-w); max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow-float); overflow: hidden;
+  transform-origin: 40px 28px; visibility: hidden; opacity: 0; clip-path: inset(0 calc(100% - var(--rail-w)) 0 0 round 24px); /* hidden = squeezed to rail width; opening grows it */
+  transition: clip-path var(--dur-3) var(--ease-in), opacity var(--dur-3) var(--ease-in), transform var(--dur-3) var(--ease-in), visibility 0s linear var(--dur-3); }
+/* js/shell.js sets three attributes on it: data-open (shown), data-pinned (the flat card beside the page) and data-faded (the page is scrolled down: it fades but keeps its place). */
+.sidebar[data-open] { visibility: visible; opacity: 1; clip-path: inset(0 0 0 0 round 24px); transition: clip-path var(--dur-4) var(--ease-out), opacity var(--dur-2) var(--ease-out), transform var(--dur-4) var(--ease-out), visibility 0s; }
+.sidebar .grp { flex: none; margin: var(--s2) var(--s5) 0; font: 700 .875rem var(--font); color: var(--muted); }
+
+.isl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s5) var(--s3) var(--s2) var(--s5); flex: none; }
+.isl-foot { flex: none; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); border-top: 1px solid var(--line); }
+.sidebar .profile-wrap { padding: 0; }
+.sidebar .profile-btn { min-height: 60px; padding: var(--s2) var(--s3); gap: var(--s3); border-radius: 18px; }
+.sidebar .profile-btn .avatar { width: 40px; height: 40px; }
+.sidebar .kbd-only { margin: 0; }
+
+/* Profile row and profile panel (T-033 B1b). The row is the island's footer button; the panel is a layer INSIDE the island that slides over the page list.
+   <aside id="sidebar" data-panel> (set by js/profile-ui.js) slides the list out to the left and the panel in from the right, the X stays above both.
+   Reduced motion: no travel, only the fade. */
+.sidebar .profile-btn .chev { margin-left: auto; color: var(--muted); }
+.sidebar .profile-label { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.sidebar .profile-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar > .grp, .sidebar > nav#mainNav, .sidebar > .isl-foot { transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
+.sidebar[data-panel] > .grp, .sidebar[data-panel] > nav#mainNav, .sidebar[data-panel] > .isl-foot { opacity: 0; transform: translateX(-24px); pointer-events: none; }
+.prof-panel { position: absolute; left: 0; right: 0; bottom: 0; top: 84px; display: flex; flex-direction: column; gap: var(--s3); padding: 0 var(--s3) var(--s4); overflow-y: auto; background: var(--surface);
+  opacity: 0; visibility: hidden; transform: translateX(24px); transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3); }
+.sidebar[data-panel] .prof-panel { opacity: 1; visibility: visible; transform: none; transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out), visibility 0s; }
+.pp-head { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s2); }
+.pp-head h2 { margin: 0; font: var(--heading-weight) 1.25rem/1.2 var(--serif); }
+.pp-head .icon-btn { background: var(--surface-2); }
+.pp-who { display: flex; align-items: center; gap: var(--s3); padding: var(--s4); border-radius: 18px; background: var(--surface-2); }
+.pp-who .avatar-lg { width: 56px; height: 56px; font-size: 1.25rem; }
+.pp-who-text { display: flex; flex-direction: column; min-width: 0; }
+.pp-who-name { font-weight: 800; font-size: 1.0625rem; overflow-wrap: anywhere; }
+.pp-sec { display: flex; flex-direction: column; gap: var(--s1); }
+.pp-h { margin: var(--s2) var(--s2) var(--s1); font: 700 .8125rem var(--font); color: var(--muted); }
+.pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.pp-prof, .pp-item { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 48px; padding: var(--s1) var(--s3); border: 0; border-radius: 14px; background: none; color: var(--text); font: 700 .9375rem var(--font); text-align: left; text-decoration: none; cursor: pointer; }
+.pp-prof .avatar { width: 32px; height: 32px; }
+.pp-prof:not([aria-current]) .avatar { background: var(--surface-2); color: var(--text); }
+.pp-prof[aria-current] { background: var(--surface-2); }
+.pp-prof-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-state { display: inline-flex; align-items: center; gap: var(--s1); font-size: .8125rem; font-weight: 700; }
+.ico-svg.sm { width: 16px; height: 16px; }
+.pp-prof[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
+.pp-item .ico-svg { margin: 0 var(--s1); }
+@media (hover: hover) { .pp-prof:hover:not([aria-current]), .pp-item:hover { background: var(--surface-2); } }
+.pp-prof:focus-visible, .pp-item:focus-visible { outline-offset: -3px; }
+.pp-form { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: 14px; background: var(--surface-2); }
+.pp-form input { width: 100%; }
+.pp-form-act { display: flex; gap: var(--s2); }
+.pp-msg:empty { display: none; }
+.pp-ask { padding: var(--s2) var(--s3); font-size: .875rem; }
+@media (prefers-reduced-motion: reduce) {
+  .sidebar[data-panel] > .grp, .sidebar[data-panel] > nav#mainNav, .sidebar[data-panel] > .isl-foot, .prof-panel { transform: none; }
+}
+.sidebar .offline-pill { align-self: flex-start; margin: 0; border-radius: 14px; }
+.sidebar .offline-note { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; flex-basis: 100%; font-weight: 400; font-size: .8rem; color: var(--muted); }
+
+/* Island row (T-033): 48px high, 4px apart. Selected = surface-2 fill + a 4px accent bar + bold + aria-current (never colour alone).
+   The round arrow chip at the end of the row is decoration (aria-hidden); the row is still one link and one tab stop. */
+nav#mainNav { display: flex; flex-direction: column; gap: var(--s1); flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--s2) var(--s3) var(--s3); }
+nav#mainNav a { position: relative; display: flex; align-items: center; gap: var(--s4); min-height: 48px; padding: 0 var(--s4); border-radius: 14px; color: var(--muted); font: 700 .9375rem var(--font); text-decoration: none; transition: background-color var(--dur-2) var(--ease-io), color var(--dur-2) var(--ease-io); }
+nav#mainNav a::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 4px; background: var(--accent); transform: scaleY(0); transition: transform var(--dur-3) var(--ease-out); }
+nav#mainNav a > .nav-ico { transition: transform var(--dur-3) var(--ease-out); }
+nav#mainNav a:focus-visible { outline-offset: -3px; }
+nav#mainNav .go { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); transition: background-color var(--dur-2) var(--ease-io), color var(--dur-2) var(--ease-io), transform var(--dur-3) var(--ease-out); }
+nav#mainNav .go svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+nav#mainNav a[aria-current="page"] { background: var(--surface-2); color: var(--text); font-weight: 800; }
 nav#mainNav a[aria-current="page"]::before { transform: scaleY(1); }
-
-/* Theme choice: a three-option segmented control (radio group) of icon buttons (sun, moon, half circle). The chosen one has a filled --bg pill and a 2px ring, so it is not shown by colour alone. */
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: var(--surface-2); border-radius: var(--radius-btn); }
-.seg-opt { min-height: 44px; border: 0; border-radius: var(--radius-btn); background: transparent; color: var(--muted); font: 700 .875rem var(--font); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 6px; transition: background-color var(--dur-3) var(--ease-io), color var(--dur-2) var(--ease-io), transform var(--dur-1) var(--ease-out); }
-.seg-opt:focus-visible { outline-offset: -3px; }
-.seg-opt:active { transform: scale(.97); }
-@media (hover: hover) { .seg-opt:hover:not([aria-checked="true"]) { color: var(--text); } }
-.seg-opt[aria-checked="true"] { background: var(--bg); color: var(--text); box-shadow: inset 0 0 0 2px var(--ctl); }
-.seg-ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-.seg-opt[aria-checked="true"] .seg-ico { stroke-width: 2.5; }
-.sidebar .seg-wrap { margin-top: auto; padding: 12px 4px 0; }
-.seg-wrap .seg-label { display: block; font: 700 .8125rem var(--font); color: var(--muted); margin: 0 4px 6px; }
-/* In the sidebar and the More sheet the word "Theme" is hidden from the eye but stays for screen readers (the standard visually-hidden recipe). */
-.sidebar .seg-label, .sheet .seg-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+nav#mainNav a[aria-current="page"] .go, nav#mainNav a:focus-visible .go { background: var(--text); color: var(--bg); }
+@media (hover: hover) {
+  nav#mainNav a:hover:not([aria-current="page"]) { background: var(--surface-2); color: var(--text); }
+  nav#mainNav a:hover > .nav-ico { transform: translateX(2px) scale(1.08); }
+  nav#mainNav a:hover .go { background: var(--text); color: var(--bg); transform: translateX(2px); }
+}
+/* Rows fade in one after another, once each time the overlay island opens (not on page load, not when pinned). */
+@keyframes ni-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+html[data-overlay="open"] nav#mainNav a { animation: ni-in var(--dur-3) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 24ms + 110ms); }
 
 /* Small drawn icons used by CSS (as masks, so they take the text colour). */
 :root {
@@ -170,25 +268,147 @@ nav#mainNav a[aria-current="page"]::before { transform: scaleY(1); }
   --i-note: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M4 5h16v11H9l-5 4z'/></svg>");
 }
 
-/* Top bar (phone): brand and theme button; hides when you scroll down, returns on any scroll up. */
-.topbar { position: sticky; top: 0; z-index: 20; height: calc(56px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: env(safe-area-inset-top, 0px) max(var(--gut), env(safe-area-inset-right, 0px)) 0 max(var(--gut), env(safe-area-inset-left, 0px)); background: var(--bg); transition: transform var(--dur-3) var(--ease-io); }
-body[data-topbar="hidden"] .topbar { transform: translateY(-100%); }
-.icon-btn { min-width: 44px; min-height: 44px; border: 0; background: var(--surface-2); color: var(--text); border-radius: var(--radius-btn); cursor: pointer; display: inline-grid; place-items: center; transition: background-color var(--dur-2) var(--ease-io), transform var(--dur-1) var(--ease-out); }
-.icon-btn:active { transform: scale(.97); }
+/* ---------- The sticky stack (T-033 point 3: the slit) ----------
+   The top bar and the page title (the first heading of the screen) must stay glued together while you scroll. The old build made
+   two separate sticky bars joined by a typed-in number (top: 56px), and a hairline of content could show between them wherever their
+   edges did not meet exactly (fractions of a pixel, the iPhone notch height). Now there is no seam to line up: the TITLE is the sticky
+   box and it reaches UP behind the top bar (its top padding is as tall as the bar), so the bar sits on top of the title's own white
+   background and the two overlap instead of touching. The top bar is sticky too, at top 0, drawn above. js/shell.js marks the title
+   (class .screen-title) only when the heading is the first thing on the screen. */
+.topbar { position: sticky; top: 0; z-index: 31; height: calc(var(--topbar-h) + var(--sat)); display: flex; align-items: center; gap: var(--s4); isolation: isolate;
+  --bar-row-bg: var(--bg); /* BAR ROW BACKGROUND (Board 2026-11-05): the one place that paints behind the bar's controls. Set to transparent for a fully see-through bar. */
+  padding: var(--sat) max(var(--edge), env(safe-area-inset-right, 0px)) 0 max(var(--edge), env(safe-area-inset-left, 0px)); }
+/* The background and the hairline are pseudo-elements, so that "fading the bar" is a pure opacity change. */
+.topbar::before, .topbar::after { content: ""; position: absolute; left: 0; right: 0; pointer-events: none; }
+.topbar::before { top: 0; bottom: 0; z-index: -1; background: var(--bar-row-bg); transition: opacity var(--dur-3) var(--ease-io); }
+.topbar .brand-top { display: none; align-items: center; min-height: 44px; margin-right: auto; font: var(--heading-weight) 1.0625rem/1.1 var(--serif); letter-spacing: -.01em; color: var(--text); text-decoration: none; }
+.topbar .sp { margin-right: auto; }
+.topbar .brand-top:focus-visible { outline-offset: 2px; }
+.icon-btn { min-width: 44px; min-height: 44px; border: 0; background: var(--surface-2); color: var(--text); border-radius: 999px; cursor: pointer; display: inline-grid; place-items: center; padding: 0; transition: background-color var(--dur-2) var(--ease-io), scale var(--dur-1) var(--ease-out); }
+.icon-btn:active { scale: .94; } /* press feedback uses the separate "scale" property, so it never fights the "transform" that the morphs below use */
 @media (hover: hover) { .icon-btn:hover { background: color-mix(in srgb, var(--surface-2), var(--text) 8%); } }
+.menu-btn { display: none; }
+@media (max-width: 999.98px) { .menu-btn { display: inline-grid; } }
 
-/* Bottom tab bar (phone): 5 items, at least 56px tall. Selected = pill behind the icon + bold label + aria-current. */
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); padding: 6px max(4px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(4px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); transition: transform var(--dur-4) var(--ease-io), opacity var(--dur-4) var(--ease-io), visibility var(--dur-4); }
-.tabbar a, .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; border: 0; background: none; padding: 0; color: var(--muted); font: 700 .8125rem var(--font); text-decoration: none; cursor: pointer; border-radius: 12px; }
-.tabbar a:focus-visible, .tabbar button:focus-visible { outline-offset: -3px; }
+/* The page title (the first heading of the screen) is sticky together with the bar. Its top padding reaches up behind the bar (the slit fix, turn A). */
+body:not([data-mode="focus"]) main#app > .screen-title {
+  position: sticky; top: 0; z-index: 30;
+  margin: calc(-1 * (var(--topbar-h) + var(--sat))) calc(-1 * var(--gut)) var(--s7);
+  padding: calc(var(--topbar-h) + var(--sat)) var(--gut) var(--s3);
+  background: var(--bg); border-bottom: 1px solid transparent;
+  transition: border-color 90ms linear, transform var(--dur-3) var(--ease-io), opacity var(--dur-3) var(--ease-io); }
+body:not([data-mode="focus"]) main#app { display: flow-root; } /* stops the title's negative top margin from collapsing through main */
+body:not([data-mode="focus"]) main#app:has(> .screen-title) { padding-top: 0; }
+body[data-mode="focus"] main#app > .screen-title { margin: 0 0 var(--s4); }
+/* HAIRLINES (Board 2026-11-05: "a line across the page where the box was"). Two possible lines: the bottom of bar + title (the title's border) and the bottom of the bar alone (.topbar::after).
+   Only one may show at any moment, and none while the bar is collapsed. Rule: each fades OUT fast (90ms) and the other fades IN only after that (90ms delay), so they never overlap. */
+.topbar::after { bottom: 0; height: 1px; background: var(--line); opacity: 0; transition: opacity 90ms linear; }
+html[data-scrolled="1"][data-title="1"]:not([data-collapsed="1"]) main#app > .screen-title { border-bottom-color: var(--line); transition: border-color var(--dur-3) var(--ease-io) 90ms, transform var(--dur-3) var(--ease-io), opacity var(--dur-3) var(--ease-io); }
+html[data-scrolled="1"][data-title="0"]:not([data-collapsed="1"]) .topbar::after { opacity: 1; transition: opacity var(--dur-3) var(--ease-io) 90ms; }
+/* GREETING: the title shows only near the top (data-title="1"). Faded, never display:none: removing it would shrink the sticky stack, move the page under the finger and make the
+   browser fire a second scroll event that undoes the collapse. While faded it catches no clicks, so the page under it stays usable (this is also the "only the bar row has a background" rule: the title's own background fades with it). */
+html[data-collapsed="1"] main#app > .screen-title, html[data-title="0"] main#app > .screen-title { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+/* COLLAPSED: the bar's background and hairline fade; the bar stops catching clicks. Wide: only the theme button stays (below). Phone: the controls travel into the pill (below). */
+html[data-collapsed="1"] .topbar { pointer-events: none; }
+html[data-collapsed="1"] .topbar::before, html[data-collapsed="1"] .topbar::after { opacity: 0; }
+html[data-collapsed="1"] .topbar::after { transition: opacity var(--dur-3) var(--ease-io); }
+html[data-collapsed="1"] .topbar [data-offline-pill] { opacity: 0; }
+.status-strip { position: fixed; z-index: 36; top: 0; left: 0; right: 0; height: var(--sat); background: var(--bg); pointer-events: none; } /* keeps the iPhone clock area the page colour while the bar is away */
+
+/* Wide screens: the theme button stays at the WINDOW's top right while the rest of the bar fades. Collapsed, it gains a ring and a shadow so it reads as a floating circle (no size or place change, so nothing jumps). */
+@media (min-width: 1000px) {
+  .topbar [data-theme-btn] { position: absolute; right: max(var(--gut), env(safe-area-inset-right, 0px)); top: var(--sat); bottom: 0; margin: auto 0; width: 44px; height: 44px; transition: background-color var(--dur-2) var(--ease-io), box-shadow var(--dur-3) var(--ease-io), scale var(--dur-1) var(--ease-out); }
+  html[data-collapsed="1"] .topbar [data-theme-btn] { pointer-events: auto; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--shadow-float); }
+}
+
+/* ---------- Icon animations ----------
+   Hamburger: hover or focus shifts the three lines in turn; menu open (aria-expanded="true") turns them into an X.
+   Theme: hover or focus turns the icon; pressing it plays a short spin-in (js/shell.js adds class "turn"). */
+.hb path { transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-2) var(--ease-io); }
+.hb .l1 { transform-origin: 12px 6px; } .hb .l2 { transform-origin: 12px 12px; } .hb .l3 { transform-origin: 12px 18px; }
+.icon-btn:focus-visible .hb .l1, .anchor:focus-visible .hb .l1 { transform: translateX(2px); }
+.icon-btn:focus-visible .hb .l2, .anchor:focus-visible .hb .l2 { transform: translateX(-2px); transition-delay: 40ms; }
+.icon-btn:focus-visible .hb .l3, .anchor:focus-visible .hb .l3 { transform: translateX(2px); transition-delay: 80ms; }
+@media (hover: hover) {
+  .icon-btn:hover .hb .l1, .anchor:hover .hb .l1 { transform: translateX(2px); }
+  .icon-btn:hover .hb .l2, .anchor:hover .hb .l2 { transform: translateX(-2px); transition-delay: 40ms; }
+  .icon-btn:hover .hb .l3, .anchor:hover .hb .l3 { transform: translateX(2px); transition-delay: 80ms; }
+}
+[aria-expanded="true"] .hb .l1 { transform: translateY(6px) rotate(45deg); }
+[aria-expanded="true"] .hb .l2 { transform: scaleX(.2); opacity: 0; }
+[aria-expanded="true"] .hb .l3 { transform: translateY(-6px) rotate(-45deg); }
+[data-theme-btn] .ico-svg { overflow: visible; transition: transform var(--dur-4) var(--ease-out); } /* the icon is drawn on a 24-unit grid (viewBox in index.html) inside a 20px box; "overflow" keeps its strokes from being cut at the edge */
+[data-theme-btn]:focus-visible .ico-svg { transform: rotate(40deg); }
+@media (hover: hover) { [data-theme-btn]:hover .ico-svg { transform: rotate(40deg); } }
+[data-theme-btn].turn .ico-svg { animation: theme-turn var(--dur-4) var(--ease-out); }
+@keyframes theme-turn { from { transform: rotate(-90deg) scale(.5); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- The phone pill ----------
+   Hamburger + Home mark + theme, centred at the top. Hidden = small and see-through; the bar's controls travel into it. Only transform and opacity animate
+   (they run on the graphics chip without re-measuring the page). Hover / focus / press use the separate "scale" property so they never fight the morph. */
+.pillrow { position: fixed; z-index: 37; top: var(--sat); left: 0; right: 0; height: var(--topbar-h); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+@media (min-width: 1000px) { .pillrow { display: none; } } /* wide screens use the anchor below instead */
+.mini { display: flex; align-items: center; gap: var(--s1); padding: var(--s1); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow-float);
+  transform: scale(.72); transform-origin: 50% 50%; opacity: 0; pointer-events: none; will-change: transform, opacity;
+  transition: transform 300ms var(--ease-io), opacity 160ms var(--ease-in), scale var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); } /* going back to hidden: shrink while fading out */
+html[data-collapsed="1"] .mini { transform: none; opacity: 1; pointer-events: auto;
+  transition: transform 340ms var(--ease-out) 40ms, opacity 200ms var(--ease-out) 100ms, scale var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); }
+.mini .icon-btn { background: none; }
+@media (hover: hover) { .mini .icon-btn:hover { background: var(--surface-2); } .mini:hover { scale: 1.05; box-shadow: var(--shadow-lift); } }
+.mini:has(:focus-visible) { scale: 1.05; box-shadow: var(--shadow-lift); }
+.mini:active { scale: .97; }
+.mini .logo-only { width: 44px; height: 44px; }
+.mini .mark { width: 32px; height: 32px; }
+/* Phone: each control of the bar slides to where its twin sits inside the centred pill while it fades; the pill grows from the same spots. Scrolling up plays it in reverse.
+   The pill is 3 buttons of 44px with 4px gaps and padding, so the outer buttons' centres are 48px either side of the screen centre. */
+@media (max-width: 999.98px) {
+  .topbar .menu-btn, .topbar [data-theme-btn], .topbar .brand-top { will-change: transform, opacity;
+    transition: transform 360ms var(--ease-out) 40ms, opacity 240ms var(--ease-out) 80ms, background-color var(--dur-2) var(--ease-io), scale var(--dur-1) var(--ease-out); }
+  html[data-collapsed="1"] .topbar .menu-btn, html[data-collapsed="1"] .topbar [data-theme-btn], html[data-collapsed="1"] .topbar .brand-top {
+    transition: transform 320ms var(--ease-io), opacity 170ms var(--ease-in), background-color var(--dur-2) var(--ease-io), scale var(--dur-1) var(--ease-out); }
+  html[data-collapsed="1"] .topbar .menu-btn { transform: translateX(calc(50vw - var(--gut) - 70px)) scale(.85); opacity: 0; }
+  html[data-collapsed="1"] .topbar [data-theme-btn] { transform: translateX(calc(var(--gut) + 70px - 50vw)) scale(.85); opacity: 0; }
+  html[data-collapsed="1"] .topbar .brand-top { transform: translateX(calc(50vw - var(--gut) - 140px)) scale(.6); opacity: 0; }
+}
+
+/* ---------- Wide screens: the anchor (the logo mark that turns into a hamburger) ----------
+   A fixed button placed by script (--ax, --ay = where the island's or rail's logo mark is). At the top of the page it is invisible and the real logo shows. When the
+   island or rail fades, the anchor appears over the same spot: first it IS the logo, then the logo turns out and a hamburger turns in, and a small elevated pill (::before) fades in around it. */
+.anchor { display: none; }
+@media (min-width: 1000px) {
+  .anchor { display: block; position: fixed; z-index: 42; left: calc(var(--ax, 16px) - 6px); top: calc(var(--ay, 16px) - 6px); width: 48px; height: 48px; padding: 0; border: 0; border-radius: 999px; background: none; color: var(--text); cursor: pointer;
+    opacity: 0; pointer-events: none; will-change: opacity; transition: opacity 160ms linear 260ms, scale var(--dur-2) var(--ease-out); }
+  .anchor::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-float); opacity: 0; transition: opacity 200ms var(--ease-in), box-shadow var(--dur-2) var(--ease-out); }
+  .anchor .a-logo, .anchor .a-hb { position: absolute; left: 50%; top: 50%; margin: -18px 0 0 -18px; width: 36px; height: 36px; display: grid; place-items: center; will-change: transform, opacity; }
+  .anchor .a-logo .mark { width: 36px; height: 36px; }
+  .anchor .a-hb { margin: -12px 0 0 -12px; width: 24px; height: 24px; }
+  .anchor .a-hb .ico-svg { width: 24px; height: 24px; }
+  .anchor .a-logo { opacity: 1; transform: none; transition: transform 300ms var(--ease-out) 80ms, opacity 200ms var(--ease-out) 80ms; }   /* resting: logo face showing, hamburger face turned away */
+  .anchor .a-hb { opacity: 0; transform: rotate(-90deg) scale(.5); transition: transform 220ms var(--ease-in), opacity 140ms var(--ease-in); }
+  html[data-collapsed="1"] .anchor { opacity: 1; pointer-events: auto; transition: opacity 80ms linear, scale var(--dur-2) var(--ease-out); }   /* collapsed: appear at once as the logo, then turn into a hamburger */
+  html[data-collapsed="1"] .anchor::before { opacity: 1; transition: opacity 260ms var(--ease-out) 140ms, box-shadow var(--dur-2) var(--ease-out); }
+  html[data-collapsed="1"] .anchor .a-logo { opacity: 0; transform: rotate(90deg) scale(.5); transition: transform 260ms var(--ease-in) 120ms, opacity 160ms var(--ease-in) 120ms; }
+  html[data-collapsed="1"] .anchor .a-hb { opacity: 1; transform: none; transition: transform 320ms var(--ease-out) 160ms, opacity 200ms var(--ease-out) 160ms; }
+  .anchor:focus-visible { scale: 1.06; }   /* hover / keyboard focus: the pill grows a little and lifts; press squeezes it */
+  .anchor:focus-visible::before { box-shadow: var(--shadow-lift); }
+  .anchor:active { scale: .97; }
+}
+@media (min-width: 1000px) and (hover: hover) { .anchor:hover { scale: 1.06; } .anchor:hover::before { box-shadow: var(--shadow-lift); } }
+body[data-mode="focus"] .pillrow, body[data-mode="focus"] .status-strip, body[data-mode="focus"] .anchor { display: none; }
+
+/* Bottom bar (phone): a floating card with exactly four items (Home, Practice, My plan, Exam; Board ruling, T-033). At least 56px tall. Selected = pill behind the icon + bold label + aria-current.
+   Every other page is in the side drawer. */
+.tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 35; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); padding: var(--s2); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow-float); transition: transform var(--dur-4) var(--ease-io), opacity var(--dur-4) var(--ease-io), visibility var(--dur-4); }
+.tabbar a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 60px; border: 0; background: none; padding: 0; color: var(--muted); font: 700 .8125rem var(--font); text-decoration: none; cursor: pointer; border-radius: 16px; }
+.tabbar a:focus-visible { outline-offset: -3px; }
 .tabbar .pill { width: 56px; height: 30px; border-radius: var(--radius-btn); display: grid; place-items: center; transition: background-color var(--dur-3) var(--ease-io), color var(--dur-3) var(--ease-io), transform var(--dur-1) var(--ease-out); }
-.tabbar a:active .pill, .tabbar button:active .pill { transform: scale(.94); }
+.tabbar a:active .pill { transform: scale(.94); }
 .tabbar [aria-current="page"] { color: var(--text); font-weight: 800; }
 .tabbar [aria-current="page"] .pill { background: var(--accent-fill); color: var(--accent-ink); }
 
-/* Dialog: the "More" sheet and the leave confirmation. A <dialog> is a native pop-up: the browser traps focus inside it,
+/* Dialog: the leave confirmation. A <dialog> is a native pop-up: the browser traps focus inside it,
    closes it with Esc and returns focus to the button that opened it. */
-dialog { border: 0; padding: 0; background: var(--surface); color: var(--text); border-radius: var(--radius); box-shadow: var(--shadow-float); max-width: min(28rem, calc(100vw - 2rem)); width: 100%;
+dialog { border: 1px solid var(--line); padding: 0; background: var(--surface); color: var(--text); border-radius: 24px; box-shadow: var(--shadow-float); max-width: min(28rem, calc(100vw - 2rem)); width: 100%;
   opacity: 0; transform: scale(.96); transition: opacity var(--dur-2) var(--ease-in), transform var(--dur-2) var(--ease-in), display var(--dur-2) allow-discrete, overlay var(--dur-2) allow-discrete; }
 dialog[open] { opacity: 1; transform: none; transition-duration: var(--dur-3); transition-timing-function: var(--ease-out); }
 @starting-style { dialog[open] { opacity: 0; transform: scale(.96); } }
@@ -196,74 +416,139 @@ dialog::backdrop { background: var(--backdrop); }
 .dlg-body { padding: 20px 20px 8px; }
 .dlg-body h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
 .dlg-actions { display: flex; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; padding: 12px 20px 20px; }
-.sheet { margin: auto auto 0; max-width: 100%; border-radius: var(--radius) var(--radius) 0 0; transform: translateY(24px); max-height: 85vh; overflow: auto; }
-.sheet[open] { transform: none; transition-duration: var(--dur-4); }
-@starting-style { .sheet[open] { opacity: 0; transform: translateY(24px); } }
-.sheet-list { list-style: none; margin: 0; padding: 4px 12px; display: grid; gap: 2px; }
-.sheet-list a { color: var(--text); }
-.sheet .seg-wrap { padding: 8px 20px 4px; }
 
-/* Focus-mode task bar: appears when a practice run or the Timed Exam starts. Never hides (the timer must stay visible). */
-.taskbar { display: none; position: sticky; top: 0; z-index: 40; height: calc(60px + env(safe-area-inset-top, 0px)); align-items: center; gap: 12px; padding: env(safe-area-inset-top, 0px) max(var(--gut), env(safe-area-inset-right, 0px)) 0 max(var(--gut), env(safe-area-inset-left, 0px)); background: var(--bg); border-bottom: 1px solid var(--line); }
+
+/* Focus-mode task bar: appears when a practice run or the Timed Exam starts. Never hides (the timer must stay visible).
+   It carries the logo mark (a link to Home that asks first), the Exit button and the title in two parts: the kind of work
+   ("Timed Exam") over the part ("Reading"); on a wide screen both sit on one line, "Timed Exam: Reading". */
+.taskbar { display: none; position: sticky; top: 0; z-index: 40; height: calc(64px + env(safe-area-inset-top, 0px)); align-items: center; gap: var(--s3); padding: env(safe-area-inset-top, 0px) max(var(--gut), env(safe-area-inset-right, 0px)) 0 max(var(--gut), env(safe-area-inset-left, 0px)); background: var(--bg); border-bottom: 1px solid var(--line); }
 body[data-mode="focus"] .taskbar { display: flex; animation: chrome-in var(--dur-4) var(--ease-out) both; }
-.taskbar .task-name { font: var(--heading-weight) 1.0625rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.taskbar .task-name { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.taskbar .n1 { font: 700 .8125rem var(--font); color: var(--muted); white-space: nowrap; }
+.taskbar .n2 { font: var(--heading-weight) 1.0625rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.taskbar .n2:empty { display: none; }
+.taskbar .btn .lbl { white-space: nowrap; }
+@media (min-width: 601px) {
+  .taskbar .task-name { flex-direction: row; align-items: baseline; gap: var(--s2); }
+  .taskbar .n1 { font: var(--heading-weight) 1.0625rem var(--serif); color: var(--text); }
+  .taskbar .task-name[data-split] .n1::after { content: ":"; }
+}
+@media (max-width: 600px) { .taskbar { gap: var(--s2); } .taskbar .btn { padding: 0 var(--s4); } }
+/* Phones 360px wide and narrower: Exit becomes a round icon-only button (its name stays "Exit" for screen readers), which gives the title room. */
+@media (max-width: 360px) { .taskbar .btn { width: 48px; padding: 0; justify-content: center; } .taskbar .btn .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
 @keyframes chrome-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 
-/* Layout switch. 1000px and up: sidebar. Below 1000px: top bar + bottom tabs. (Board default, easy to change: change both 1000s.) */
+/* Icon rail (the collapsed menu, wide screens only). */
+.rail { display: none; position: fixed; z-index: 40; left: var(--isl-gap); top: calc(var(--isl-gap) + env(safe-area-inset-top, 0px)); bottom: var(--isl-gap); width: var(--rail-w); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--card-shadow); flex-direction: column; align-items: center; padding: var(--s3) 0; gap: var(--s1); }
+.rail .sp { flex: 1; }
+.rail .rsep { width: 32px; height: 1px; background: var(--line); margin: var(--s2) 0; flex: none; }
+.rail-list { display: flex; flex-direction: column; align-items: center; gap: var(--s1); }
+.ri { position: relative; width: 48px; height: 48px; flex: none; border-radius: 16px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; cursor: pointer; text-decoration: none; transition: background-color var(--dur-2) var(--ease-io), color var(--dur-2) var(--ease-io); }
+.ri .nav-ico { transition: transform var(--dur-3) var(--ease-out); }
+.ri[aria-current="page"] { background: var(--surface-2); color: var(--text); }
+.ri[aria-current="page"]::before { content: ""; position: absolute; left: -8px; top: 12px; bottom: 12px; width: 4px; border-radius: 4px; background: var(--accent); }
+.ri:focus-visible { outline-offset: 2px; }
+.rail .logo-only { height: 48px; }
+.rail .profile-wrap { padding: 0; }
+.rail .profile-btn { width: 48px; min-height: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; background: none; justify-content: center; }
+.rail .profile-btn .avatar { width: 44px; height: 44px; }
+.rail .profile-label { display: none; }
+/* The tooltip is a CSS label that repeats the button's accessible name (aria-label); shown on pointer hover and on keyboard focus.
+   WCAG 1.4.13: Esc hides it without moving focus (body[data-tips="off"] until focus or the pointer moves again); it stays while hovered. */
+.ri::after { content: attr(data-tip); position: absolute; left: calc(100% + 14px); top: 50%; transform: translate(-6px, -50%); background: var(--tip-bg); color: var(--tip-ink); font: 700 .875rem/1 var(--font); white-space: nowrap; padding: 10px 12px; border-radius: 10px; opacity: 0; pointer-events: none; box-shadow: var(--shadow-float); transition: opacity var(--dur-2) var(--ease-in), transform var(--dur-2) var(--ease-in); z-index: 60; }
+.ri:focus-visible::after { opacity: 1; transform: translate(0, -50%); transition-duration: var(--dur-3); transition-timing-function: var(--ease-out); }
+@media (hover: hover) {
+  .ri:hover:not([aria-current="page"]) { background: var(--surface-2); color: var(--text); }
+  .ri:hover .nav-ico { transform: scale(1.1); }
+  .ri:hover::after { opacity: 1; transform: translate(0, -50%); transition-duration: var(--dur-3); transition-timing-function: var(--ease-out); }
+}
+body[data-tips="off"] .ri::after { opacity: 0 !important; }
+
+.scrim { position: fixed; inset: 0; z-index: 45; background: var(--scrim); opacity: 0; visibility: hidden; transition: opacity var(--dur-3) var(--ease-io), visibility 0s linear var(--dur-3); }
+html[data-overlay="open"] .scrim { opacity: 1; visibility: visible; transition: opacity var(--dur-3) var(--ease-io), visibility 0s; }
+.rail { transition: opacity 260ms var(--ease-out) 120ms; }
+/* FADED = the page has scrolled down: the island / rail fade out (opacity only). They keep their space, so nothing else moves. Placed after the rules above so it wins. */
+.rail[data-faded], .sidebar[data-faded] { opacity: 0; pointer-events: none; transition: opacity 260ms var(--ease-in); }
+
+/* Layout switch. 1000px and up: rail or island (pinned or overlay). Below 1000px: top bar + bottom bar + side drawer. (Board default, easy to change: change both 1000s.) */
 @media (min-width: 1000px) {
-  .sidebar { display: flex; flex-direction: column; position: fixed; z-index: 25; left: 0; top: 0; bottom: 0; width: var(--side-w); padding: 16px 10px; background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; transition: transform var(--dur-4) var(--ease-io), opacity var(--dur-4) var(--ease-io), visibility var(--dur-4); }
-  .content { margin-left: var(--side-w); transition: margin-left var(--dur-4) var(--ease-io); }
-  .topbar, .tabbar, .only-phone { display: none; }
-  /* sticky screen bar: the first h1 of each screen (JS adds .screen-title). 64px, shrinks to 48px after 24px of scroll and gains a bottom line. */
-  main#app > .screen-title { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; height: var(--bar-h); margin: 0 calc(-1 * var(--gut)) .75rem; padding: 0 var(--gut); background: var(--bg); font-size: 1.5rem; border-bottom: 1px solid transparent; transition: border-color var(--dur-3) var(--ease-io); }
-  html[data-scrolled="1"] main#app > .screen-title { border-bottom-color: var(--line); }
-  main#app { padding-top: 0; }
-  /* Folded sidebar: slides away (visibility also switches so Tab skips it), content takes the full width, and the slim top bar
-     (hamburger, logo, theme button) stays pinned at the top. It never hides on scroll and is gone in focus mode. */
-  html[data-sidebar="folded"] .sidebar { transform: translateX(-100%); visibility: hidden; }
-  html[data-sidebar="folded"] .content { margin-left: 0; }
-  html[data-sidebar="folded"] body:not([data-mode="focus"]) .topbar { display: flex; transform: none; }
-  html[data-sidebar="folded"] .topbar .menu-btn { display: inline-grid; }
-  html[data-sidebar="folded"] main#app > .screen-title { top: 56px; }
-  html[data-sidebar="folded"] body:not([data-mode="focus"]) .toast-host { left: var(--gut); }
-  body[data-mode="focus"] .sidebar { transform: translateX(-100%); opacity: 0; visibility: hidden; }
-  body[data-mode="focus"] .content { margin-left: 0; }
+  html[data-nav="rail"] .rail { display: flex; }
+  /* Before js/shell.js has run (html has no data-shell yet) a pinned island is shown at once, so there is no flash. */
+  html[data-nav="pinned"]:not([data-shell]) .sidebar { visibility: visible; opacity: 1; clip-path: none; transform: none; box-shadow: var(--card-shadow); }
+  /* An overlay island (anything that is not the pinned one) slides in from the left edge. */
+  .sidebar:not([data-pinned]) { clip-path: none; transform: translateX(calc(-100% - 24px)); }
+  .sidebar:not([data-pinned])[data-open] { transform: none; }
+  .sidebar[data-pinned] { box-shadow: var(--card-shadow); z-index: 32; transition: clip-path var(--dur-4) var(--ease-out), transform var(--dur-4) var(--ease-out), opacity 260ms var(--ease-out) 120ms, visibility 0s; }
+  .tabbar, .only-phone { display: none; }
+  .topbar .sp { display: block; }
+  html[data-nav="pinned"] .topbar [data-offline-pill] { display: none; } /* the island shows it */
 }
 @media (max-width: 999.98px) {
+  :root { --isl-gap: 8px; }
   .only-wide { display: none; }
-  html { --bar-h: 56px; }
-  html[data-scrolled="1"] { --bar-h: 56px; }
-  html:has(body[data-mode="focus"]) { --bar-h: calc(60px + env(safe-area-inset-top, 0px)); }
+  .topbar .brand-top { display: inline-flex; }
+  /* The side drawer: the same island, off to the left until opened; it lists only the pages that are not in the bottom bar. */
+  .sidebar { width: min(340px, calc(100vw - 48px)); clip-path: none; transform: translateX(calc(-100% - 24px)); }
+  .sidebar[data-open] { clip-path: none; transform: none; }
+  nav#mainNav a[data-in-bar] { display: none; }
   body[data-mode="focus"] .topbar { display: none; }
   body[data-mode="focus"] .tabbar { transform: translateY(100%); opacity: 0; visibility: hidden; }
-  .app-footer { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+  .app-footer { padding-bottom: calc(7.5rem + env(safe-area-inset-bottom)); }
   body[data-mode="focus"] .app-footer { padding-bottom: 3rem; }
 }
+body[data-mode="focus"] .sidebar, body[data-mode="focus"] .rail, body[data-mode="focus"] .scrim { display: none !important; }
+@media (min-width: 1000px) { body[data-mode="focus"] .topbar { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  /* No slide, no clip, no scale, no turn, no stagger: everything changes by opacity over 100ms. */
+  .sidebar, .sidebar[data-open], .sidebar:not([data-pinned]), .sidebar[data-pinned] { clip-path: none !important; transform: none !important; transition: opacity 100ms linear, visibility 0s linear 100ms !important; }
+  .sidebar[data-open], .sidebar[data-pinned] { transition: opacity 100ms linear, visibility 0s !important; }
+  .rail, .rail[data-faded], .sidebar[data-faded] { transition: opacity 100ms linear !important; }
+  html[data-overlay="open"] nav#mainNav a { animation: none; }
+  .ri::after, .ri:hover::after, .ri:focus-visible::after { transform: translate(0, -50%) !important; transition: opacity 100ms linear !important; }
+  .ri:hover .nav-ico, nav#mainNav a:hover > .nav-ico, nav#mainNav a:hover .go { transform: none !important; }
+  main#app > .screen-title, html[data-collapsed="1"] main#app > .screen-title, html[data-title="0"] main#app > .screen-title { transform: none !important; transition: opacity 100ms linear, border-color 100ms linear !important; }
+  .topbar::before, .topbar::after, html[data-collapsed="1"] .topbar::after { transition: opacity 100ms linear !important; }
+  html.glide main#app, html.glide .app-footer, html.glide .topbar { transition: none !important; }
+  .mini, html[data-collapsed="1"] .mini, .topbar .menu-btn, .topbar [data-theme-btn], .topbar .brand-top,
+  html[data-collapsed="1"] .topbar .menu-btn, html[data-collapsed="1"] .topbar [data-theme-btn], html[data-collapsed="1"] .topbar .brand-top { transform: none !important; transition: opacity 100ms linear !important; }
+  .mini, .mini:hover, .mini:active, .mini:has(:focus-visible), .icon-btn, .icon-btn:active { scale: none !important; }
+  .hb path, [data-theme-btn] .ico-svg { transform: none !important; transition: opacity 100ms linear !important; }
+  [data-theme-btn].turn .ico-svg { animation: none; }
+  [aria-expanded="true"] .hb .l2 { opacity: 1; }   /* no morph to X: the icon stays as three lines; aria-expanded still says what is open */
+  .anchor, .anchor:hover, .anchor:active, .anchor:focus-visible { scale: none !important; }
+  .anchor .a-logo, .anchor .a-hb, html[data-collapsed="1"] .anchor .a-logo, html[data-collapsed="1"] .anchor .a-hb { transform: none !important; transition: opacity 100ms linear !important; }
+  .anchor, html[data-collapsed="1"] .anchor, .anchor::before, html[data-collapsed="1"] .anchor::before { transition: opacity 100ms linear !important; }
+  .scrim, html[data-overlay="open"] .scrim { transition: opacity 100ms linear, visibility 0s !important; }
+}
 
-main#app { max-width: 1120px; margin: 0 auto; padding: 1.5rem var(--gut) 3rem; min-height: 70vh; } /* T-031 C: keeps the footer from jumping down when a screen is drawn (Lighthouse layout shift) */
+main#app { max-width: var(--col); margin: 0 auto; padding: var(--s7) var(--gut) var(--s11); min-height: 70vh; } /* T-031 C: keeps the footer from jumping down when a screen is drawn (Lighthouse layout shift) */
+@media (max-width: 999.98px) { main#app { padding-top: var(--s6); padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px)); } }
 .content:has(main#app:empty) .app-footer { visibility: hidden; } /* not drawn until the first screen exists, so it cannot be seen jumping down */
-.app-footer { max-width: 1120px; margin: 0 auto; padding: 1rem var(--gut) 3rem; color: var(--muted); font-size: .9375rem; border-top: 1px solid var(--line); }
+.app-footer { max-width: var(--col); margin: 0 auto; padding: var(--s4) var(--gut) var(--s9); color: var(--muted); font-size: .9375rem; border-top: 1px solid var(--line); }
 
 /* ---------- 5. Type and layout blocks ---------- */
 h1, h2, h3, h4 { font-family: var(--serif); font-weight: var(--heading-weight); letter-spacing: -.02em; }
-h1 { font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem); line-height: 1.1; margin: 0 0 .6rem; }
-h2 { font-size: clamp(1.35rem, 1.1rem + 1vw, 1.7rem); line-height: 1.15; margin: 0 0 .6rem; }
+h1 { font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.25rem); line-height: 1.1; margin: 0 0 var(--s3); }
+h2 { font-size: clamp(1.35rem, 1.1rem + 1vw, 1.7rem); line-height: 1.15; margin: 0 0 var(--s4); }
 h3, .h3 { font-size: 1.125rem; line-height: 1.25; margin: 0 0 .4rem; font-weight: 700; }
 h4 { font-size: 1rem; margin: 0 0 .3rem; font-weight: 700; }
 p { margin: 0 0 .8rem; max-width: 70ch; }
 .muted { color: var(--muted); }
 .small { font-size: .9375rem; }
-.mt { margin-top: 1.25rem; }
+.mt { margin-top: var(--s8); } /* the gap between sections: 40px (32px on a phone), at least twice the space inside a card's group */
+.muted.mt, .small.mt, .h3.mt, .tips-list.mt { margin-top: var(--s4); } /* a hint line or a small heading is not a new section */
+@media (max-width: 999.98px) { .mt { margin-top: var(--s7); } .muted.mt, .small.mt, .h3.mt, .tips-list.mt { margin-top: var(--s4); } }
 .eyebrow-free { display: none; } /* placeholder so old markup that used it shows nothing */
 .back-link { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: .25rem; font-weight: 700; }
 .ico { width: 1.25em; height: 1.25em; vertical-align: -.2em; margin-right: .35em; }
 
-.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1rem; }
-.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1rem; }
-.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 1rem; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--s6); }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--s6); }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--s6); }
 
-/* Card: surface, no outline, no shadow at rest (the only shadow in the product is --shadow-float, for pop-ups). */
-.card, .stat-card { background: var(--surface); border: var(--tile-border); border-radius: var(--radius); padding: 1.25rem 1.4rem; }
+/* Card (T-033): surface with a hairline; in the light theme also a soft shadow (--card-shadow), in dark the hairline alone. 24px inside (20px on a phone). */
+.card, .stat-card { background: var(--surface); border: var(--tile-border); border-radius: var(--radius); box-shadow: var(--card-shadow); padding: var(--s6); }
+@media (max-width: 999.98px) { .card { padding: var(--s5); } .grid-2, .grid-3, .grid-4 { gap: var(--s5); } }
 .stat-card { padding: 1rem; }
 .stat-name { font-weight: 700; }
 .stat-value { font: var(--heading-weight) 2.2rem/1.1 var(--serif); }
@@ -444,7 +729,7 @@ details > summary { cursor: pointer; }
 /* Learn: contents list beside a lesson. Wide: a sticky right column. Phone: a collapsed "On this page" button above the lesson.
    The section in view gets the sidebar-item look (inset bar, bold) and aria-current="location" (set by Shell.contents). */
 .lesson-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-.toc { background: var(--surface); border-radius: var(--radius); padding: .25rem .5rem; }
+.toc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .25rem .5rem; }
 .toc > summary { min-height: 44px; display: flex; align-items: center; padding: 0 .6rem; font: 800 .9375rem var(--serif); border-radius: 12px; }
 .toc ol { list-style: none; margin: 0; padding: 0 0 .4rem; }
 .toc a { display: flex; align-items: center; min-height: 44px; padding: 0 .75rem; border-radius: 12px; color: var(--muted); font-size: .9375rem; font-weight: 700; text-decoration: none; position: relative; }
@@ -455,7 +740,7 @@ details > summary { cursor: pointer; }
 @media (min-width: 1000px) {
   .lesson-layout { grid-template-columns: minmax(0, 1fr) 220px; align-items: start; gap: 1.75rem; }
   .toc-slot { align-self: stretch; } /* as tall as the lesson, so the list inside can stick while you scroll */
-  .toc { position: sticky; top: calc(var(--bar-h) + 12px); max-height: calc(100vh - var(--bar-h) - 24px); overflow: auto; }
+  .toc { position: sticky; top: calc(var(--stack-h) + 12px); max-height: calc(100vh - var(--stack-h) - 24px); overflow: auto; }
   .toc > summary { pointer-events: none; list-style: none; }
   .toc > summary::-webkit-details-marker { display: none; }
 }
@@ -504,7 +789,7 @@ mark, mark.hl { background: var(--mark); color: var(--text); border-radius: 3px;
 /* ---------- 7b. Practice tools (js/tools.js): question dots, flag, selection pop-up, notes, bars, toast ---------- */
 /* Question dots: 36px drawn, 44px hit area. Answered = filled; not answered = ring; current = accent outline; flagged = badge.
    Four different shapes, so colour is never the only signal. */
-.qnav { position: sticky; top: var(--bar-h); z-index: 5; background: var(--bg); padding: 8px 0 6px; margin-bottom: .6rem; box-shadow: 0 -24px 0 var(--bg); } /* the shadow is a solid strip above the bar, so no question text shows between it and the bar above */
+.qnav { position: sticky; top: var(--stack-h); z-index: 5; background: var(--bg); padding: 8px 0 6px; margin-bottom: .6rem; box-shadow: 0 -24px 0 var(--bg); } /* the shadow is a solid strip above the bar, so no question text shows between it and the bar above */
 .dots { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 4px; padding: 6px 8px 0 0; list-style: none; }
 .dot { position: relative; width: 36px; height: 36px; padding: 0; border: var(--bw) solid var(--ctl); border-radius: var(--radius-chip); background: transparent; color: var(--text); font: 700 .875rem var(--font); display: grid; place-items: center; cursor: pointer; transition: background-color var(--dur-2) var(--ease-io), border-color var(--dur-2) var(--ease-io), transform var(--dur-1) var(--ease-out); }
 .dot::after { content: ""; position: absolute; inset: -4px; } /* the 44px hit area */
@@ -565,7 +850,7 @@ mark.has-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 
    content on wide screens; on phones above the tab bar (or near the bottom while a run hides the tabs). */
 .toast-host { position: fixed; z-index: 70; left: var(--gut); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: var(--gut); display: flex; justify-content: flex-start; pointer-events: none; }
 body:not([data-mode="focus"]) .toast-host { bottom: calc(76px + env(safe-area-inset-bottom)); }
-@media (min-width: 1000px) { body:not([data-mode="focus"]) .toast-host { left: calc(var(--side-w) + var(--gut)); bottom: 16px; } }
+@media (min-width: 1000px) { body:not([data-mode="focus"]) .toast-host { left: calc(var(--off) + var(--gut)); bottom: 16px; } }
 .toast { pointer-events: auto; display: inline-flex; align-items: center; gap: .6rem; max-width: 100%; padding: .7rem 1rem; border-radius: min(var(--radius), 14px); background: var(--text); color: var(--bg); font-weight: 700; box-shadow: var(--shadow-float); opacity: 0; transform: translateY(12px); transition: opacity var(--dur-2) var(--ease-in), transform var(--dur-2) var(--ease-in); }
 .toast.show { opacity: 1; transform: none; transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
 .toast .btn { color: var(--bg); border-color: var(--bg); min-height: 36px; }
@@ -579,12 +864,13 @@ body:not([data-mode="focus"]) .toast-host { bottom: calc(76px + env(safe-area-in
 @media (min-width: 1000px) {
   main#app:has(.split) { max-width: 1400px; }
   .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1.75rem; align-items: start; }
-  .split-passage, .split-questions { position: sticky; top: calc(var(--bar-h) + 16px); max-height: calc(100vh - var(--bar-h) - 32px); overflow: auto; overscroll-behavior: contain; padding: 4px 8px 1rem 4px; scrollbar-width: thin; scrollbar-color: var(--ctl) transparent; }
+  .split-passage, .split-questions { position: sticky; top: calc(var(--stack-h) + 16px); max-height: calc(100vh - var(--stack-h) - 32px); overflow: auto; overscroll-behavior: contain; padding: 4px 8px 1rem 4px; scrollbar-width: thin; scrollbar-color: var(--ctl) transparent; }
   .split .passage-text { max-width: none; }
 }
 
 /* Dashboard tiles ("bento" grid): four columns on a wide screen, two on tablets and phones. */
-.bento { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.bento { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s6); }
+@media (max-width: 999.98px) { .bento { gap: var(--s5); } }
 .bento > .card { margin: 0; }
 .bento .span-2 { grid-column: span 2; }
 .bento .span-4 { grid-column: 1 / -1; }
@@ -626,6 +912,10 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; scroll-behavior: auto !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* The circle wipe (js/pagewipe.js): one full-screen disc; only its clip-path is animated. Above the menu and its scrim. */
+.pagewipe { position: fixed; inset: 0; z-index: 110; background: var(--wipe); pointer-events: none; }
+.pagewipe[hidden] { display: none; }
 
 /* ---------- 7c. Dashboard additions (turn C): radar chart, pace tile, mastery grid ---------- */
 /* The radar tile is tall and sits left; pace and mastery stack on its right (wide screens). */
@@ -699,7 +989,6 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .install-steps li { margin: .4rem 0; }
 .share-ico, .btn-ico { width: 1.35em; height: 1.35em; vertical-align: -.3em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .btn-ico { margin-right: .4rem; }
-.sheet .install-box { padding-top: 0; }
 /* The offline label is a pill with an icon AND the word, so it never relies on colour. The one-line explanation shows in the sidebar and is read aloud elsewhere. */
 .offline-pill { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .1rem .4rem; margin: 0; padding: .25rem .7rem; border: 1.5px solid var(--ctl); border-radius: var(--radius-btn); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: .875rem; }
 .offline-pill .btn-ico { margin: 0; }
@@ -729,7 +1018,6 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 /* T-031 turn B: profiles. The avatar is a round initial; the name always shows too, so colour is never the only signal. */
 .avatar { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-fill); color: var(--accent-ink); font-weight: 700; font-size: .95rem; }
 .profile-wrap { padding: 0 4px 12px; }
-.sheet .profile-wrap { padding: 4px 20px 8px; }
 .profile-btn { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius, 12px); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .profile-btn:hover { background: var(--hover, var(--surface)); }
 .profile-label { display: flex; flex-direction: column; min-width: 0; }
@@ -772,3 +1060,44 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .explain-status { margin: 8px 0; color: var(--muted); font-size: 0.9rem; }
 .explain-status.explain-failed { color: var(--text); padding: 10px 12px; border: 2px solid var(--bad); border-radius: 10px; background: var(--surface); font-weight: 600; }
 .run-footer .explain-status { flex-basis: 100%; }
+.sidebar .install-box { padding: 0; }
+
+/* ---------- Arrange menu card in Settings (T-033 B2a; spec section 11 and the mockup) ----------
+   Wide (1000px and up): the list and a sticky preview side by side. Phone (640px and under): every row is two lines, so the switch
+   and its words ("Always in bar") never run under the move buttons. All controls are 44px or more. */
+.arr { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s6); align-items: start; }
+@media (min-width: 1000px) { .arr { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); } .arr .arr-prev { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--topbar-h, 64px) + 104px); } }
+.arr-card, .arr-prev .card { margin: 0; }
+.arr-status { display: flex; align-items: center; gap: var(--s2); min-height: 44px; font-weight: 700; margin: 0 0 var(--s3); }
+.arr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.arr-row { display: grid; grid-template-columns: 28px 24px minmax(0, 1fr) auto auto; grid-template-areas: "n i name sw mv"; align-items: center; gap: var(--s3); min-height: 60px; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.arr-n { grid-area: n; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
+.arr-row > .arr-ico { grid-area: i; color: var(--muted); }
+.arr-nm { grid-area: name; font-weight: 700; overflow-wrap: anywhere; }
+.arr-sw-slot { grid-area: sw; justify-self: start; }
+.arr-mvs { grid-area: mv; display: flex; gap: var(--s1); }
+@media (max-width: 640px) { .arr-row { grid-template-columns: 28px 24px minmax(0, 1fr) auto; grid-template-areas: "n i name mv" "sw sw sw sw"; row-gap: var(--s2); } .arr-mvs { justify-self: end; } }
+.arr-sw { display: inline-flex; align-items: center; gap: var(--s2); min-height: 44px; padding: 0 var(--s1); border: 0; background: none; color: var(--text); font: 700 .875rem var(--font); cursor: pointer; border-radius: 12px; }
+.arr-track { width: 52px; height: 32px; flex: none; border-radius: 999px; border: 2px solid var(--ctl); background: transparent; display: flex; align-items: center; padding: 2px; transition: background-color var(--dur-3) var(--ease-io), border-color var(--dur-3) var(--ease-io); }
+.arr-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--ctl); display: grid; place-items: center; color: var(--accent); transition: transform var(--dur-3) var(--ease-out), background-color var(--dur-3) var(--ease-io); }
+.arr-thumb .ico-svg { width: 16px; height: 16px; stroke-width: 3; opacity: 0; }
+.arr-sw[aria-checked="true"] .arr-track { background: var(--accent-fill); border-color: var(--accent-fill); }
+.arr-sw[aria-checked="true"] .arr-thumb { transform: translateX(20px); background: var(--bg); }
+.arr-sw[aria-checked="true"] .arr-thumb .ico-svg { opacity: 1; }
+.arr-sw[aria-disabled="true"] { color: var(--muted); cursor: not-allowed; }
+.arr-sw[aria-disabled="true"][aria-checked="false"] .arr-track { background: var(--surface-2); border-color: var(--line); }
+.arr-sw[aria-disabled="true"][aria-checked="false"] .arr-thumb { background: var(--line); }
+.arr-word { display: inline-flex; align-items: center; gap: var(--s1); white-space: nowrap; min-width: 5.2em; text-align: left; }
+.arr-mv { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--ctl); background: transparent; color: var(--text); display: grid; place-items: center; cursor: pointer; padding: 0; transition: background-color var(--dur-2) var(--ease-io), transform var(--dur-1) var(--ease-out); }
+.arr-mv:active { transform: scale(.94); }
+@media (hover: hover) { .arr-mv:hover:not([aria-disabled="true"]) { background: var(--surface-2); } }
+.arr-mv[aria-disabled="true"] { border-color: var(--line); color: var(--muted); background: var(--surface-2); cursor: not-allowed; }
+.arr-sw:focus-visible, .arr-mv:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.arr-reset { margin: var(--s5) 0 0; }
+.arr-pv-list { margin: 0 0 var(--s5); padding: 0; list-style: none; display: grid; gap: var(--s1); font-size: .9375rem; }
+.arr-pv-list li { display: flex; gap: var(--s3); align-items: center; color: var(--muted); min-height: 28px; }
+.arr-pv-list b { color: var(--text); font-variant-numeric: tabular-nums; width: 1.4em; }
+.arr-pv-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.arr-pv-bar span { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 58px; justify-content: center; font: 700 .8125rem var(--font); color: var(--muted); border-radius: 14px; min-width: 0; }
+.arr-pv-bar .empty { border: 2px dashed var(--ctl); color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .arr-track, .arr-thumb, .arr-mv { transition: none !important; } }

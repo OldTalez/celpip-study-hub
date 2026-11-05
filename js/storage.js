@@ -69,15 +69,18 @@ const Storage = (() => {
     vocab: "celpip_vocab_v1",         // word cards: box (how well known) and the next due date
     grammar: "celpip_grammar_v1",     // best score per grammar topic
     log: "celpip_log_v1",             // the study log: date, minutes, skill, notes
+    navLayout: "celpip_navlayout_v1", // the Arrange menu layout (T-033 B2a): { v: 1, order: [11 page ids], bar: [4 page ids] }; checked by NavLayout.validate on read and on import
     studyTime: "celpip_studytime_v1"  // minutes studied: { days: { "2026-11-05": { reading: 12.5, general: 20 } }, manual: [ added-by-hand entries ] } (T-030)
   };
-  function get(name, fallback) { return read(Profiles.key(KEYS[name]), fallback); }
-  function set(name, value) { return write(Profiles.key(KEYS[name]), value); }
+  // The layout has its own checked reader and writer in NavLayout: going around them would let an unchecked value in (or out), so route there.
+  function get(name, fallback) { if (name === "navLayout") return NavLayout.stored() || fallback; return read(Profiles.key(KEYS[name]), fallback); }
+  function set(name, value) { if (name === "navLayout") return NavLayout.save(value); return write(Profiles.key(KEYS[name]), value); }
 
   // Everything the learner owns, for backup/export and for a full reset.
   function exportAll() {
     const out = { exportedAt: new Date().toISOString(), profileName: Profiles.active().name, history: getHistory(), settings: getSettings() };
     Object.keys(KEYS).forEach(k => { out[k] = get(k, null); });
+    out.navLayout = NavLayout.stored();   // never export a value that would not pass the check: a hand-edited note is left out, so the default applies
     return out;
   }
   // LEARNING NOTE: a backup file is typed-in data we do not control, and screens print some of its values into the page.
@@ -187,7 +190,9 @@ const Storage = (() => {
     }
     return out;
   }
-  const CLEANERS = { partStats: cleanPartStats, mistakes: cleanMistakes, vocab: cleanVocab, grammar: cleanGrammar, log: cleanLog, studyTime: cleanStudyTime };
+  // The Arrange layout: a valid copy, or undefined (the field is then simply left out of the cleaned bundle, so a bad value never reaches storage).
+  const cleanNavLayout = src => NavLayout.validate(src) || undefined;
+  const CLEANERS = { navLayout: cleanNavLayout, partStats: cleanPartStats, mistakes: cleanMistakes, vocab: cleanVocab, grammar: cleanGrammar, log: cleanLog, studyTime: cleanStudyTime };
   // LEARNING NOTE (T-031 turn B): every way data can arrive (a backup file, a QR transfer, a shared file) goes through cleanBundle.
   // It rebuilds the data field by field with the cleaners above and returns a NEW object; nothing from the outside is stored as it came.
   // The history list is capped at 5000 entries so a crafted file cannot fill the device.
@@ -195,11 +200,11 @@ const Storage = (() => {
     skipped = 0;
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
     // Positive evidence: a real backup has at least one of the keys we write (history, settings or one of the study stores). "{}" or {"a":1} is not a backup.
-    if (!(Array.isArray(obj.history) || isObj(obj.settings) || Object.keys(KEYS).some(k => obj[k] !== undefined && obj[k] !== null))) return null;
+    if (!(Array.isArray(obj.history) || isObj(obj.settings) || Object.keys(KEYS).some(k => k !== "navLayout" && obj[k] !== undefined && obj[k] !== null))) return null;   // a layout alone is not a backup
     const out = {};
     if (Array.isArray(obj.history)) { out.history = obj.history.slice(0, 5000).map(cleanAttempt).filter(Boolean); skipped += obj.history.length - out.history.length; }
     if (obj.settings && typeof obj.settings === "object" && !Array.isArray(obj.settings)) out.settings = cleanSettings(obj.settings);
-    Object.keys(KEYS).forEach(k => { if (obj[k] !== undefined && obj[k] !== null) out[k] = CLEANERS[k](obj[k]); });  // k comes from KEYS (our own list), never from the file
+    Object.keys(KEYS).forEach(k => { if (obj[k] !== undefined && obj[k] !== null) { const c = CLEANERS[k](obj[k]); if (c !== undefined) out[k] = c; } });  // k comes from KEYS (our own list), never from the file
     out.profileName = Profiles.cleanName(obj.profileName);
     return out;
   }
@@ -227,13 +232,17 @@ const Storage = (() => {
   function importAll(obj) {
     const b = cleanBundle(obj);
     if (!b) return false;
-    return writeSafely(Profiles.activeId, b, false);
+    const ok = writeSafely(Profiles.activeId, b, false);
+    if (ok) NavLayout.refresh();   // an imported layout shows in the menus at once
+    return ok;
   }
   // Transfer: "Replace this profile" erases the active learner's data and writes the bundle; if the write fails the old data comes back. True when saved.
   function replaceActive(obj) {
     const b = cleanBundle(obj);
     if (!b) return false;
-    return writeSafely(Profiles.activeId, b, true);
+    const ok = writeSafely(Profiles.activeId, b, true);
+    if (ok) NavLayout.refresh();
+    return ok;
   }
   // Transfer: "Add as new profile". Returns the new profile; null when the limit of 8 profiles is reached or the data is not a backup;
   // false when the device could not store it (the half-made profile is removed again).
@@ -259,7 +268,7 @@ const Storage = (() => {
   function importSkipped() { return skipped; } // how many entries the last import left out
   // Reset erases the ACTIVE learner's notes only (history, settings, the study stores and the small app notes). Other profiles,
   // the theme and the sidebar fold are not touched.
-  function resetAll() { Profiles.removeKeys(Profiles.activeId); }
+  function resetAll() { Profiles.removeKeys(Profiles.activeId); NavLayout.refresh(); }
 
   return { getHistory, saveAttempt, deleteAttempt, clearHistory, getSettings, saveSettings, get, set, exportAll, importAll, cleanBundle, replaceActive, addAsProfile, summary, importSkipped, resetAll };
 })();

@@ -4,6 +4,7 @@ e2e-test.cjs drives the whole app in a headless Chrome, the way a person would: 
 a full timed exam with all 8 speaking tasks, review, words, grammar, notes, plan, settings, history and the phone
 layout. It uses a fake microphone (Chrome's test device) and makes time run 100 times faster, so a 55-minute timer
 takes about half a minute. Each check prints PASS or FAIL; the exit code is the number of failures.
+Run only the steps whose name contains a word: E2E_ONLY="B2a" node tools/e2e-test.cjs ... (for quick debugging; the full run is what counts).
 Run it (from this folder):
   npm install playwright-core           (once; uses an installed Chrome via CHROME_PATH, or Playwright's own)
   python -m http.server 8790            (in another window)
@@ -35,6 +36,11 @@ a forced load failure shows Retry, script names only come from the fixed table, 
 */
 const {chromium}=require('playwright-core');
 const BASE=process.argv[2]||'http://localhost:8790/';const SHOTS=process.argv[3]||'';
+// Screenshots: only the ones named b1b-* or b2a-* (the ones kept in the task folder) go to the folder given as the third argument.
+// Every other screenshot is a throw-away check picture and goes to tools/work/shots/ (ignored by git, see "Celpip Test v2/.gitignore"), or to $E2E_SHOTS_DIR.
+const SCRATCH=(process.env.E2E_SHOTS_DIR||require('path').join(__dirname,'work','shots'))+'/';
+if(SHOTS)require('fs').mkdirSync(SCRATCH,{recursive:true});
+const sp=n=>(/^(b1b|b2a|b2b)-/.test(n)?SHOTS:SCRATCH)+n;
 let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
 (async()=>{const b=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined,
    args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
@@ -54,7 +60,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  p.on('dialog',d=>d.accept());
  const run=ms=>p.waitForTimeout(Math.max(40,ms/100));
  const go=async h=>{await p.evaluate(h=>{if(location.hash===h)render();else location.hash=h},h);await p.waitForTimeout(150)};
- const step=async(name,fn)=>{const before=errs.length;try{await fn()}catch(e){ok(false,name+' threw: '+e.message.split('\n')[0])}const n=errs.slice(before);if(n.length){ok(false,name+' page errors: '+n.slice(0,3).join(' | '))}};
+ const step=async(name,fn)=>{if(process.env.E2E_ONLY&&name.indexOf(process.env.E2E_ONLY)<0)return;const before=errs.length;try{await fn()}catch(e){ok(false,name+" threw: "+e.message.split("\n").slice(0,6).join(" | "))}const n=errs.slice(before);if(n.length){ok(false,name+' page errors: '+n.slice(0,3).join(' | '))}};
  const txt=s=>p.$eval(s,e=>e.textContent).catch(()=>null);
  // selects the first n characters of a passage and tells the highlighter the mouse was let go
  const selectPassage=(scope,n)=>p.evaluate(([scope,n])=>{const t=document.querySelector(scope+' .passage-text');const w=document.createTreeWalker(t,NodeFilter.SHOW_TEXT);w.nextNode();
@@ -197,73 +203,109 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(await vis('#sidebar')&&!(await vis('#tabBar')),'wide 1280: sidebar visible, bottom tabs hidden');
    ok(await p.$$eval('#mainNav a',a=>a.length)===11,'sidebar lists all 11 pages');
    ok(await p.$eval('#mainNav a[data-section=dashboard]',a=>a.getAttribute('aria-current'))==='page','sidebar: current page has aria-current="page"');
-   ok(await p.evaluate(()=>{const n=document.querySelector('nav#mainNav'),t=document.querySelector('.sidebar [data-theme-switch]');return n.getAttribute('aria-label')==='Main'&&t.getBoundingClientRect().bottom<=innerHeight}),'sidebar: Main landmark, and the theme switch fits on screen');
-   await p.setViewportSize({width:1000,height:800});await p.waitForTimeout(100);ok(await vis('#sidebar')&&!(await vis('#tabBar')),'exactly 1000px: sidebar');
+   ok(await p.evaluate(()=>{const n=document.querySelector('nav#mainNav');return n.getAttribute('aria-label')==='Main'&&!document.querySelector('.sidebar [data-theme-switch], .sidebar [role=radiogroup]')&&!!document.querySelector('#topbar #themeBtn')}),'sidebar: Main landmark; the theme switch is gone from the island and the theme button is in the top bar (T-033)');
+   await p.setViewportSize({width:1000,height:800});await p.waitForTimeout(500);ok(await vis('#rail')&&!(await vis('#sidebar'))&&!(await vis('#tabBar')),'exactly 1000px: icon rail, island hidden (T-033 D6)');
    await p.setViewportSize({width:999,height:800});await p.waitForTimeout(100);ok(!(await vis('#sidebar'))&&await vis('#tabBar'),'999px: bottom tabs, no sidebar');
    await p.setViewportSize({width:1100,height:800});await p.waitForTimeout(100);
-   ok(await p.evaluate(()=>{const s=document.querySelector('.sidebar [data-theme-switch]').getBoundingClientRect(),m=document.querySelector('main#app').getBoundingClientRect();return s.right<=m.left+1}),'1100px: theme switch sits in the sidebar (no wrapped header row)');
+   ok(await p.evaluate(()=>{const s=document.querySelector('#rail').getBoundingClientRect(),m=document.querySelector('main#app').getBoundingClientRect();return s.right<=m.left+1}),'1100px: the rail sits left of the content');
    await p.setViewportSize({width:390,height:844});await go('#/dashboard');
+   // PHONE: the bottom bar and the side drawer (T-033 B1a)
    const labels=await p.$$eval('#tabBar a, #tabBar button',x=>x.map(e=>e.textContent.trim()));
-   ok(labels.join(',')==='Home,Practice,Review,Exam,More','phone: tabs are '+labels.join(', '));
+   ok(labels.join(',')==='Home,Practice,My plan,Exam','phone bar has exactly 4 items in this order: '+labels.join(', '));
    ok(await p.$eval('#tabBar a[data-section=dashboard]',a=>a.getAttribute('aria-current'))==='page','phone: current tab has aria-current');
-   ok(await p.$$eval('#tabBar a, #tabBar button',x=>x.every(e=>e.getBoundingClientRect().height>=56)),'phone: every tab is 56px or taller');
-   await p.click('#moreBtn');await p.waitForTimeout(150);
-   ok(await p.$eval('#moreSheet',d=>d.open),'phone: More opens the sheet');
-   const more=await p.$$eval('#moreSheet .sheet-list a',x=>x.map(a=>a.textContent.trim()));
-   ok(more.join(',')==='Learn,Words,Grammar,Notes,My plan,History,Settings','More lists the 7 pages ('+more.join(', ')+')');
-   await p.click('#moreSheet a[data-section=notes]');await p.waitForTimeout(250);
-   ok(!(await p.$eval('#moreSheet',d=>d.open))&&await p.evaluate(()=>location.hash)==='#/notes','More: choosing Notes closes the sheet and opens Notes');
-   ok(await p.$eval('#moreBtn',b=>b.getAttribute('aria-current'))==='page','More tab is marked current while on a More page');
-   await p.setViewportSize({width:1280,height:900})});
+   ok(await p.$$eval('#tabBar a',x=>x.every(e=>e.getBoundingClientRect().height>=56)),'phone: every tab is 56px or taller');
+   ok(await p.evaluate(()=>{const r=document.getElementById('tabBar').getBoundingClientRect();return r.left===12&&Math.round(innerWidth-r.right)===12&&Math.round(innerHeight-r.bottom)===12&&getComputedStyle(document.getElementById('tabBar')).borderRadius==='24px'}),'phone bar: floating card, 12px from the sides and the bottom, 24px corners');
+   ok(!(await p.$('#moreBtn'))&&!(await p.$('#moreSheet')),'phone: the old More button and sheet are gone');
+   const mb=await p.$eval('#topbar .menu-btn',b=>({txt:b.textContent.trim(),lab:b.getAttribute('aria-label'),w:b.getBoundingClientRect().width,h:b.getBoundingClientRect().height,ex:b.getAttribute('aria-expanded')}));
+   ok(mb.txt===''&&mb.lab==='Open menu'&&mb.w>=44&&mb.h>=44&&mb.ex==='false','phone: the menu button is icon-only, named "Open menu", 44px or more, closed');
+   const dr=()=>p.evaluate(()=>{const s=document.getElementById('sidebar'),r=s.getBoundingClientRect();return {ov:document.documentElement.dataset.overlay||'',vis:getComputedStyle(s).visibility,left:Math.round(r.left),inert:s.inert,content:document.getElementById('content').inert,tabs:document.getElementById('tabBar').inert,scrim:getComputedStyle(document.getElementById('scrim')).opacity,act:document.activeElement.id||document.activeElement.className,names:[...document.querySelectorAll('#mainNav a')].filter(a=>a.getClientRects().length).map(a=>a.textContent.trim()),grp:getComputedStyle(document.querySelector('#sidebar .grp')).display,role:s.getAttribute('role'),menuExp:document.querySelector('#topbar .menu-btn').getAttribute('aria-expanded')}});
+   await p.waitForTimeout(400);let d=await dr();ok(d.ov===''&&d.vis==='hidden'&&d.inert,'drawer closed: hidden and inert (the slide itself is skipped under reduced motion, which this run uses)');
+   await p.click('#topbar .menu-btn');await p.waitForTimeout(400);d=await dr();
+   ok(d.ov==='open'&&d.vis==='visible'&&!d.inert&&d.left>=0&&d.left<=16&&d.content&&d.tabs&&d.scrim==='1'&&d.role==='dialog'&&d.act==='islandX'&&d.menuExp==='true','drawer open: slid in from the left, modal, page and bottom bar inert, scrim on, focus on the X');
+   ok(d.names.join(',')==='Learn,Review,Words,Grammar,Notes,History,Settings'&&d.grp==='block','drawer lists only the pages that are not in the bar ('+d.names.join(', ')+') under "More pages"');
+   ok(await p.$eval('#islandX',x=>x.getAttribute('aria-label'))==='Close menu'&&!!(await p.$('#sidebar [data-profile-panel-open]')),'drawer: X is "Close menu"; the profile button is inside');
+   let leak=false;for(let i=0;i<30&&!leak;i++){await p.keyboard.press('Tab');leak=await p.evaluate(()=>!document.activeElement.closest('#sidebar'))}ok(!leak,'drawer: Tab never leaves it (30 presses)');
+   await p.keyboard.press('Escape');await p.waitForTimeout(400);d=await dr();ok(d.ov===''&&d.inert&&!d.content&&d.act.indexOf('menu-btn')>=0,'drawer: Esc closes it and focus returns to the menu button');
+   await p.click('#topbar .menu-btn');await p.waitForTimeout(300);await p.click('#islandX');await p.waitForTimeout(300);ok((await dr()).ov===''&&(await dr()).act.indexOf('menu-btn')>=0,'drawer: the X closes it, focus back on the menu button');
+   await p.click('#topbar .menu-btn');await p.waitForTimeout(300);await p.mouse.click(380,400);await p.waitForTimeout(300);ok((await dr()).ov==='','drawer: a tap on the dimmed page (scrim) closes it');
+   await p.click('#topbar .menu-btn');await p.waitForTimeout(300);await p.click('#sidebar a[data-section=notes]');await p.waitForTimeout(300);
+   ok((await dr()).ov===''&&await p.evaluate(()=>location.hash)==='#/notes','drawer: choosing Notes closes it and opens Notes');
+   await p.setViewportSize({width:1280,height:900})})
 
- await step('sidebar folds into a hamburger menu (wide screens)',async()=>{
+ // T-033 turn A: the icon rail, the island (pinned or overlay), X and Expand, tooltips, spacing (spec section 17, items 5, 6, 15)
+ await step('rail and island (wide screens)',async()=>{
    await p.setViewportSize({width:1440,height:900});await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await p.goto(BASE+'#/dashboard');await p.reload();await p.waitForTimeout(400);
-   const st=()=>p.evaluate(()=>{const v=s=>{const e=document.querySelector(s);if(!e)return false;const r=e.getBoundingClientRect(),c=getComputedStyle(e);return c.display!=='none'&&c.visibility!=='hidden'&&r.width>0&&r.right>0&&r.top>=0&&r.top<80};return {side:v('#sidebar'),top:v('#topbar'),logo:v('#topbar .brand'),attr:document.documentElement.dataset.sidebar,ml:getComputedStyle(document.querySelector('.content')).marginLeft}});
-   let a=await st();ok(a.side&&!a.top&&a.attr==='open','sidebar: open by default; sticky bar hidden');
-   ok(await p.$eval('#menuBtn',b=>b.getAttribute('aria-label')==='Hide menu'&&b.getAttribute('aria-expanded')==='true'&&b.getAttribute('aria-controls')==='sidebar'),'sidebar: hamburger says "Hide menu", expanded, controls the sidebar');
-   await p.click('#menuBtn');await p.waitForTimeout(500);a=await st();
-   ok(!a.side&&a.top&&a.logo&&a.attr==='folded'&&a.ml==='0px','sidebar: folded -> sticky bar with logo shows, content full width');
-   ok(await p.$eval('#menuBtnTop',b=>b.getAttribute('aria-label')==='Show menu'&&b.getAttribute('aria-expanded')==='false'&&document.activeElement===b),'sidebar: folded -> "Show menu", collapsed, focus on the toggle');
-   await p.evaluate(()=>window.scrollTo(0,1200));await p.waitForTimeout(400);a=await st();ok(a.top&&a.logo,'sidebar: the logo bar stays visible after scrolling');
-   await p.evaluate(()=>window.scrollTo(0,0));
-   await p.reload();await p.waitForTimeout(400);a=await st();ok(a.attr==='folded'&&!a.side&&a.top,'sidebar: folded choice survives reload');
-   await p.focus('#menuBtnTop');let reach=false;for(let i=0;i<40&&!reach;i++){await p.keyboard.press('Tab');reach=await p.evaluate(()=>!!document.activeElement.closest('#sidebar'))}
-   ok(!reach,'sidebar: Tab never reaches the folded sidebar');
-   await p.goto(BASE+'#/practice');await p.waitForTimeout(300);
-   await p.evaluate(()=>Shell.focusMode.enter());await p.waitForTimeout(500);ok(!(await st()).top,'sidebar: focus mode hides the sticky bar');await p.evaluate(()=>Shell.focusMode.exit());await p.waitForTimeout(500);
-   await p.click('#menuBtnTop');await p.waitForTimeout(500);a=await st();
-   ok(a.side&&!a.top&&a.attr==='open'&&await p.evaluate(()=>document.activeElement.id==='menuBtn'&&localStorage.getItem('celpip_sidebar')==='open'),'sidebar: unfolds, focus returns to the sidebar toggle, saved as open');
-   await p.evaluate(()=>localStorage.setItem('celpip_sidebar','banana'));await p.reload();await p.waitForTimeout(300);ok((await st()).attr==='open','sidebar: junk saved value = open');
-   await p.evaluate(()=>localStorage.setItem('celpip_sidebar','folded'));await p.setViewportSize({width:390,height:844});await p.reload();await p.waitForTimeout(400);
-   ok(await p.evaluate(()=>{const v=s=>{const e=document.querySelector(s);return !!e&&e.getBoundingClientRect().width>0&&getComputedStyle(e).display!=='none'};return !v('#sidebar')&&v('#topbar')&&v('#tabBar')&&!v('#menuBtnTop')&&getComputedStyle(document.querySelector('.content')).marginLeft==='0px'}),'sidebar: below 1000px nothing changes (tab bar and phone top bar, no hamburger)');
-   await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await p.setViewportSize({width:1440,height:900});await p.reload();await p.waitForTimeout(300)});
+   const shown=sel=>p.evaluate(sel=>{const e=document.querySelector(sel);if(!e)return false;const r=e.getBoundingClientRect(),c=getComputedStyle(e);return c.display!=='none'&&c.visibility!=='hidden'&&r.width>0&&!e.closest('[inert]')},sel);
+   const st=()=>p.evaluate(()=>({nav:document.documentElement.dataset.nav,ov:document.documentElement.dataset.overlay||'',ml:getComputedStyle(document.documentElement).getPropertyValue('--off').trim(),pref:localStorage.getItem('celpip_sidebar'),act:document.activeElement.id||document.activeElement.getAttribute('data-rail-expand')!==null&&'expand'||document.activeElement.tagName}));
+   let a=await st();ok(a.nav==='pinned'&&await shown('#sidebar')&&!(await shown('#rail'))&&a.ml==='304px','island: pinned by default at 1440 (1440 leaves 304px free each side; the column is centred, no left margin)');
+   ok(await p.evaluate(()=>!document.querySelector('#rail [role=radiogroup], #sidebar [role=radiogroup]')&&!!document.querySelector('#topbar #themeBtn')),'rail/island: no theme radio group inside, the theme button is in the top bar');
+   ok(await p.$eval('#islandX',x=>x.getAttribute('aria-label')==='Collapse menu to icons'),'island: the X is named "Collapse menu to icons" when pinned');
+   ok(await p.$$eval('#mainNav a',l=>l.every(x=>x.getBoundingClientRect().height===48&&!!x.querySelector('.go[aria-hidden=true]'))&&l.length===11),'island: 11 rows, 48px high, each with an aria-hidden arrow chip');
+   ok(await p.$eval('#mainNav a[aria-current=page] .go',c=>getComputedStyle(c).backgroundColor)==='rgb(15, 36, 48)','island: the chip on the current-page row is solid');
+   await p.click('#islandX');await p.waitForTimeout(500);a=await st();
+   ok(a.nav==='rail'&&a.pref==='folded'&&a.ml==='112px'&&await shown('#rail')&&!(await shown('#sidebar')),'X: collapses to the rail, saved as folded, content pushed 112px');
+   ok(a.act==='expand','X: focus lands on Expand');
+   const rail=await p.evaluate(()=>({links:[...document.querySelectorAll('#rail a.ri[data-section]')].map(x=>x.getAttribute('aria-label')),logo:!!document.querySelector('#rail [data-logo]'),exp:!!document.querySelector('#rail [data-rail-expand]'),prof:!!document.querySelector('#rail [data-profile-open]'),named:[...document.querySelectorAll('#rail a, #rail button')].every(x=>x.getAttribute('aria-label')&&x.tabIndex>=0&&x.getBoundingClientRect().width>=44)}));
+   ok(rail.links.length===11&&rail.logo&&rail.exp&&rail.prof&&rail.named&&rail.links.includes('Practice'),'rail: 11 page links plus logo, Expand and profile, each named, focusable and 44px or more');
+   await p.focus('#rail [data-rail-expand]');await p.keyboard.press('Tab');await p.keyboard.press('Tab');await p.keyboard.press('Tab');await p.waitForTimeout(400);
+   const tip=()=>p.evaluate(()=>{const e=document.activeElement,c=getComputedStyle(e,'::after');return {name:e.getAttribute('aria-label'),content:c.content,op:c.opacity}});
+   let t=await tip();ok(t.name==='Practice'&&t.content==='"Practice"'&&t.op==='1','rail: keyboard focus on Practice shows its tooltip (opacity '+t.op+', '+t.content+')');
+   await p.keyboard.press('Escape');await p.waitForTimeout(300);t=await tip();ok(t.op==='0','rail: Esc hides the tooltip without moving focus');
+   await p.keyboard.press('Tab');await p.waitForTimeout(300);t=await tip();ok(t.op==='1','rail: moving focus shows the next tooltip again');
+   await p.click('#rail a[data-section=review]');await p.waitForTimeout(300);ok(await p.evaluate(()=>location.hash)==='#/review'&&await p.$eval('#rail a[data-section=review]',x=>x.getAttribute('aria-current'))==='page','rail: a click on Review navigates and marks it current');
+   await p.click('#rail [data-rail-expand]');await p.waitForTimeout(500);a=await st();
+   ok(a.nav==='pinned'&&a.pref==='open'&&a.ov===''&&await shown('#sidebar')&&a.act==='islandX','Expand (1440): re-pins the island, saved as open, focus on the X');
+   await p.evaluate(()=>localStorage.setItem('celpip_sidebar','banana'));await p.reload();await p.waitForTimeout(300);ok((await st()).nav==='pinned','island: a junk saved value = pinned');
+   await p.evaluate(()=>localStorage.setItem('celpip_sidebar','folded'));await p.reload();await p.waitForTimeout(300);ok((await st()).nav==='rail','rail: folded choice survives reload');
+   // 1000 to 1199: rail only, Expand opens the island as a modal overlay
+   await p.setViewportSize({width:1100,height:800});await p.waitForTimeout(300);
+   a=await st();ok(a.nav==='rail'&&!(await shown('#sidebar')),'1100px: the rail rests, the island is hidden');
+   await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await p.reload();await p.waitForTimeout(300);
+   ok((await st()).nav==='rail','1100px: rail even when never folded');
+   await p.focus('#rail [data-rail-expand]');await p.keyboard.press('Enter');await p.waitForTimeout(500);a=await st();
+   const ov=await p.evaluate(()=>({role:document.getElementById('sidebar').getAttribute('role'),modal:document.getElementById('sidebar').getAttribute('aria-modal'),content:document.getElementById('content').inert,lab:document.getElementById('islandX').getAttribute('aria-label'),exp:document.querySelector('[data-rail-expand]').getAttribute('aria-expanded')}));
+   ok(a.ov==='open'&&await shown('#sidebar')&&ov.role==='dialog'&&ov.modal==='true'&&ov.content&&ov.lab==='Close menu'&&a.act==='islandX','overlay: opens as a modal dialog, page behind inert, X named "Close menu", focus on the X');
+   let leaked=false;for(let i=0;i<30&&!leaked;i++){await p.keyboard.press('Tab');leaked=await p.evaluate(()=>!document.activeElement.closest('#sidebar'))}
+   ok(!leaked,'overlay: Tab never leaves the island (30 presses)');
+   await p.keyboard.press('Escape');await p.waitForTimeout(500);a=await st();ok(a.ov===''&&a.act==='expand'&&!(await shown('#sidebar')),'overlay: Esc closes it and focus returns to Expand');
+   await p.click('#rail [data-rail-expand]');await p.waitForTimeout(500);await p.mouse.click(900,400);await p.waitForTimeout(500);ok((await st()).ov==='','overlay: a click on the dimmed page closes it');
+   await p.click('#rail [data-rail-expand]');await p.waitForTimeout(500);await p.click('#islandX');await p.waitForTimeout(500);ok((await st()).ov===''&&(await st()).act==='expand','overlay: the X closes it');
+   await p.click('#rail [data-rail-expand]');await p.waitForTimeout(500);await p.click('#sidebar a[data-section=learn]');await p.waitForTimeout(400);ok((await st()).ov===''&&await p.evaluate(()=>location.hash)==='#/learn','overlay: choosing a page closes it and goes there');
+   await p.setViewportSize({width:999,height:800});await p.waitForTimeout(300);ok(!(await shown('#rail'))&&!(await shown('#sidebar'))&&await shown('#tabBar'),'999px: no rail, no island, bottom tabs');
+   // spacing (item 15)
+   await p.setViewportSize({width:1440,height:900});await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await go('#/dashboard');await p.reload();await p.waitForTimeout(400);
+   const sp=await p.evaluate(()=>({gap:getComputedStyle(document.querySelector('.bento')).columnGap,pad:getComputedStyle(document.querySelector('.bento .card')).paddingLeft,row:document.querySelector('#mainNav a').getBoundingClientRect().height,bg:getComputedStyle(document.body).backgroundColor,card:getComputedStyle(document.querySelector('.bento .card')).backgroundColor}));
+   ok(sp.gap==='24px'&&sp.pad==='24px'&&sp.row===48,'spacing 1440: grid gap 24px, card padding 24px, island row 48px ('+JSON.stringify(sp)+')');
+   ok(sp.bg==='rgb(255, 255, 255)'&&sp.card==='rgb(255, 255, 255)','light theme: body and card are white');
+   await p.setViewportSize({width:390,height:844});await p.reload();await p.waitForTimeout(400);
+   ok(await p.evaluate(()=>getComputedStyle(document.querySelector('main#app')).paddingLeft)==='20px','spacing 390: the gutter is 20px');
+   await p.setViewportSize({width:1280,height:900});await p.reload();await p.waitForTimeout(300)});
 
  await step('theme: Light / Dark / Auto',async()=>{
-   const th=()=>p.evaluate(()=>[document.documentElement.dataset.theme,document.documentElement.dataset.themePref,localStorage.getItem('celpip_theme'),getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()]);
+   const th=()=>p.evaluate(()=>[document.documentElement.dataset.theme,document.documentElement.dataset.themePref,localStorage.getItem('celpip_theme'),getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),(document.getElementById('metaTheme')||{}).content]);
    await p.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await go('#/settings');
-   ok(await p.$$eval('#app [data-theme-set]',b=>b.length)===0&&await p.$$eval('#app [role=radiogroup]',b=>b.length)===0&&/sun, moon or half-circle button in the menu/.test(await txt('#themeHint')||''),'settings (T-031C): no theme switch in the card, just the one-line hint; the theme options live in the menu');
-   await p.click('.sidebar [role=radio][aria-label=Dark]');let t=await th();ok(t[0]==='dark'&&t[2]==='dark'&&t[3]==='#0a171d','theme: Dark chosen and saved ('+t.join(' ')+')');
-   await p.click('.sidebar [role=radio][aria-label=Light]');t=await th();ok(t[0]==='light'&&t[2]==='light'&&t[3]==='#f2f6f8','theme: Light chosen and saved');
-   await p.click('.sidebar [role=radio][aria-label="Auto (follow device)"]');t=await th();ok(t[0]==='light'&&t[1]==='auto'&&t[2]==='auto','theme: Auto saved; the device is light so the page is light');
-   await p.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await p.waitForTimeout(100);t=await th();ok(t[0]==='dark'&&t[1]==='auto','theme: Auto follows the device to dark, live');
-   await p.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await p.waitForTimeout(100);t=await th();ok(t[0]==='light','theme: Auto follows the device back to light, live');
-   ok(await p.$eval('.sidebar [data-theme-set=auto]',b=>b.getAttribute('aria-checked'))==='true','theme: the chosen option is marked aria-checked');
-   await p.focus('.sidebar [data-theme-set=auto]');await p.keyboard.press('ArrowLeft');t=await th();ok(t[2]==='dark','theme: an arrow key moves to the neighbouring option and chooses it');
-   // an old saved value keeps working, a junk value means Auto
-   await p.evaluate(()=>localStorage.setItem('celpip_theme','dark'));await p.reload();await p.waitForTimeout(400);t=await th();ok(t[0]==='dark'&&t[1]==='dark','theme: an old saved "dark" still works after reload');
-   await p.evaluate(()=>localStorage.setItem('celpip_theme','banana'));await p.reload();await p.waitForTimeout(400);t=await th();ok(t[1]==='auto'&&t[0]==='light','theme: an unknown saved value is treated as Auto');
+   ok(await p.$$eval('#app [data-theme-set]',b=>b.length)===0&&await p.$$eval('#app [role=radiogroup]',b=>b.length)===0&&/button at the top right/.test(await txt('#themeHint')||''),'settings (T-031C): no theme switch in the card, just the one-line hint pointing to the top-right button');
+   // T-033: ONE theme-color meta, no media attribute, rewritten on every change
+   ok(await p.evaluate(()=>{const m=document.querySelectorAll('meta[name=theme-color]');return m.length===1&&!m[0].hasAttribute('media')&&m[0].id==='metaTheme'}),'theme-color: exactly one meta, no media attribute');
+   const cycleTo=async pref=>{for(let i=0;i<3&&(await th())[1]!==pref;i++){await p.click('#themeBtn');await p.waitForTimeout(80)}};
+   await cycleTo('dark');let t=await th();ok(t[0]==='dark'&&t[2]==='dark'&&t[3]==='#000000'&&t[4]==='#000000','theme: Dark by the top-bar button; --bg and theme-color are #000000 ('+t.join(' ')+')');
+   ok(await p.evaluate(()=>getComputedStyle(document.body).backgroundColor)==='rgb(0, 0, 0)'&&await p.evaluate(()=>{const c=document.querySelector('.card');return !c||getComputedStyle(c).backgroundColor==='rgb(14, 14, 14)'}),'dark: body rgb(0, 0, 0), cards rgb(14, 14, 14)');
+   await cycleTo('auto');t=await th();ok(t[0]==='light'&&t[1]==='auto'&&t[2]==='auto'&&t[4]==='#FFFFFF','theme: Auto saved; the device is light so the page and theme-color are light (#FFFFFF)');
+   await p.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await p.waitForTimeout(100);t=await th();ok(t[0]==='dark'&&t[1]==='auto'&&t[4]==='#000000','theme-color: Auto follows the device to dark, live, and the meta follows (#000000)');
+   await p.emulateMedia({colorScheme:'light',reducedMotion:'reduce'});await p.waitForTimeout(100);t=await th();ok(t[0]==='light'&&t[4]==='#FFFFFF','theme-color: Auto follows the device back to light (#FFFFFF)');
+   await cycleTo('light');t=await th();ok(t[0]==='light'&&t[2]==='light'&&t[4]==='#FFFFFF','theme: Light chosen and saved; theme-color #FFFFFF');
+   // an old saved value keeps working, a junk value means Auto; the head script sets the meta before first paint
+   await p.evaluate(()=>localStorage.setItem('celpip_theme','dark'));await p.reload();await p.waitForTimeout(400);t=await th();ok(t[0]==='dark'&&t[1]==='dark'&&t[4]==='#000000','theme: an old saved "dark" still works after reload, meta #000000');
+   await p.evaluate(()=>localStorage.setItem('celpip_theme','banana'));await p.reload();await p.waitForTimeout(400);t=await th();ok(t[1]==='auto'&&t[0]==='light'&&t[4]==='#FFFFFF','theme: an unknown saved value is treated as Auto');
    await p.evaluate(()=>localStorage.setItem('celpip_theme','auto'));await p.reload();await p.waitForTimeout(400);
-   // icon buttons: every option has an accessible name and tooltip, and no visible Light/Dark/Auto words in the sidebar switch
-   ok(await p.$$eval('[data-theme-set]',bs=>bs.length>=6&&bs.every(b=>b.getAttribute('aria-label')&&b.title===b.getAttribute('aria-label')&&b.querySelector('svg')&&!b.textContent.trim())),'theme icons: every option has an aria-label, a matching tooltip, an icon and no text');
-   ok(JSON.stringify(await p.$$eval('.sidebar [data-theme-set]',bs=>bs.map(b=>b.getAttribute('aria-label'))))==='["Light","Dark","Auto (follow device)"]','theme icons: names are Light, Dark, Auto (follow device)');
-   ok(await p.evaluate(()=>{const w=document.querySelector('.sidebar [data-theme-switch]');const l=w.querySelector('.seg-label'),r=l.getBoundingClientRect();return l.textContent==='Theme'&&r.width<=1&&!/Light|Dark|Auto/.test(w.innerText)}),'theme icons: sidebar switch shows no words, "Theme" label kept for screen readers');
-   ok(await p.evaluate(()=>{const l=document.querySelector('.sidebar .seg-label');return !!l&&l.textContent==='Theme'}),'theme icons: the menu switch keeps its "Theme" label for screen readers');
-   ok(await p.$$eval('.sidebar [data-theme-set]',bs=>bs.every(b=>{const r=b.getBoundingClientRect();return r.width>=36&&r.height>=44})),'theme icons: sidebar targets are at least 44px tall');
+   ok(await p.evaluate(()=>document.querySelector('meta[name=apple-mobile-web-app-status-bar-style]').content)==='black-translucent','iPhone status bar style is black-translucent (D1)');
+   // phone More sheet keeps the three icon buttons; the top-bar button cycles them
    const phc=await b.newContext({viewport:{width:390,height:844}});const ph=await phc.newPage();await ph.goto(BASE+'#/dashboard');await ph.evaluate(()=>localStorage.setItem('celpip_theme','light'));await ph.reload();await ph.waitForTimeout(400);
    const pb=()=>ph.$eval('#themeBtn',e=>[e.getAttribute('aria-label'),e.querySelector('use').getAttribute('href')].join('|'));
    const seq=[await pb()];for(let i=0;i<3;i++){await ph.click('#themeBtn');await ph.waitForTimeout(150);seq.push(await pb())}
    ok(seq.join(' ; ')==='Theme: Light, change|#i-sun ; Theme: Dark, change|#i-moon ; Theme: Auto, change|#i-theme ; Theme: Light, change|#i-sun','phone theme button: icon and label follow Light > Dark > Auto > Light ('+seq.join(' ; ')+')');
    ok(await ph.$eval('#themeBtn',e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44}),'phone theme button is at least 44px');
+   ok(await ph.evaluate(()=>!document.querySelector('[data-theme-set], [role=radiogroup]')),'theme: the three-button switch is gone with the More sheet; the one button cycles the choices');
    await phc.close()});
 
  await step('focus mode in practice',async()=>{
@@ -293,6 +335,111 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await p.click('#exitBtn');await p.waitForTimeout(150);await p.click('#confirmDlg button[value=leave]');await run(100);await p.waitForTimeout(250);
    ok((await p.evaluate(()=>location.hash))==='#/exam'&&!(await p.$('.exam-banner'))&&(await p.evaluate(()=>document.body.dataset.mode||''))==='','exam: Leave returns to the exam page, menus back');
    ok(await p.evaluate(()=>window.onbeforeunload===null),'exam: leave warning cleared after leaving')});
+
+ // ===== T-033 turn A (spec section 17): logo to Home, task bar title, no slit, collapsing bar =====
+ await step('logo goes Home; confirm in practice and the exam',async()=>{
+   await p.setViewportSize({width:1440,height:900});await go('#/settings');
+   await p.click('#sidebar [data-logo]');await p.waitForTimeout(300);ok(await p.evaluate(()=>location.hash)==='#/dashboard','logo: from Settings the island logo goes Home');
+   ok(await p.$$eval('[data-logo]',l=>l.length>=4&&l.every(x=>x.getAttribute('href')==='#/dashboard'&&x.getAttribute('aria-label')==='CELPIP Study Hub, go to Home')),'logo: every logo is a link to #/dashboard named "CELPIP Study Hub, go to Home"');
+   await go('#/practice/reading');await p.click('#quickBtn');await run(50);await p.waitForTimeout(200);const hash0=await p.evaluate(()=>location.hash);
+   ok(await p.$eval('#taskBar [data-logo]',l=>l.getBoundingClientRect().width===48),'practice: the task bar carries the 48px logo mark');
+   await p.click('#taskBar [data-logo]');await p.waitForTimeout(200);
+   ok(await p.$eval('#confirmDlg',d=>d.open)&&await p.evaluate(()=>document.activeElement.id)==='confirmKeep','practice: the logo opens the Leave question with "Keep going" focused');
+   await p.click('#confirmKeep');await p.waitForTimeout(200);
+   ok(await p.evaluate(()=>location.hash)===hash0&&await p.evaluate(()=>document.body.dataset.mode)==='focus'&&await p.evaluate(()=>document.activeElement.hasAttribute('data-logo')),'practice: Keep going leaves the route unchanged and returns focus to the logo');
+   await p.click('#taskBar [data-logo]');await p.waitForTimeout(200);await p.click('#confirmDlg button[value=leave]');await p.waitForTimeout(300);
+   ok(await p.evaluate(()=>location.hash)==='#/dashboard'&&(await p.evaluate(()=>document.body.dataset.mode||''))==='','practice: Leave goes Home and ends focus mode');
+   await go('#/exam');await p.click('a[href="#/exam/run"]');await run(100);await p.waitForTimeout(250);
+   const tn=()=>p.evaluate(()=>{const t=document.getElementById('taskName');return {n1:t.querySelector('.n1').textContent,n2:t.querySelector('.n2').textContent,fit:t.scrollWidth===t.clientWidth&&[...t.children].every(c=>c.scrollWidth<=c.clientWidth)}});
+   let n=await tn();ok(n.n1==='Timed Exam'&&n.n2==='Listening'&&n.fit,'exam task bar 1440: "Timed Exam" and the part, no ellipsis ('+JSON.stringify(n)+')');
+   await p.setViewportSize({width:390,height:844});await p.waitForTimeout(200);n=await tn();ok(n.n1==='Timed Exam'&&n.n2==='Listening'&&n.fit,'exam task bar 390: two parts "Timed Exam" over "Listening", no ellipsis');
+   await p.setViewportSize({width:320,height:700});await p.waitForTimeout(200);n=await tn();
+   ok(n.fit&&await p.evaluate(()=>{const b=document.getElementById('exitBtn'),r=b.getBoundingClientRect();return r.width===48&&b.textContent.trim()==='Exit'&&document.querySelector('#exitBtn .lbl').getBoundingClientRect().width<=1}),'exam task bar 320: Exit is icon-only (48px, name kept), the title fits');
+   await p.setViewportSize({width:1440,height:900});await p.waitForTimeout(150);
+   await p.click('#taskBar [data-logo]');await p.waitForTimeout(200);
+   ok(await p.$eval('#confirmDlg',d=>d.open)&&/Leave the exam/.test(await txt('#confirmTitle')||'')&&await p.evaluate(()=>document.activeElement.id)==='confirmKeep','exam: the logo opens the Leave-the-exam question, "Keep going" focused');
+   await p.click('#confirmKeep');await p.waitForTimeout(200);ok(!!(await p.$('.exam-banner'))&&await p.evaluate(()=>document.body.dataset.mode)==='focus','exam: Keep going stays in the exam');
+   await p.click('#taskBar [data-logo]');await p.waitForTimeout(200);await p.click('#confirmDlg button[value=leave]');await run(100);await p.waitForTimeout(300);
+   ok(await p.evaluate(()=>location.hash)==='#/dashboard'&&!(await p.$('.exam-banner'))&&(await p.evaluate(()=>document.body.dataset.mode||''))==='','exam: Leave goes Home, focus mode ends');
+   ok(await p.evaluate(()=>window.onbeforeunload===null),'exam: leave warning cleared after leaving via the logo')});
+
+ for(const [W,H] of [[390,844],[1100,800],[1440,900]]) await step(`sticky stack and collapsing bar at ${W}`,async()=>{
+   await p.setViewportSize({width:W,height:H});await p.evaluate(()=>localStorage.removeItem('celpip_sidebar'));await go('#/dashboard');await p.waitForTimeout(200);
+   await p.evaluate(()=>{document.querySelector('main#app').style.minHeight='3500px';window.scrollTo(0,0);window.__cl=[];window.addEventListener('scroll',()=>{window.__cl.push([window.scrollY,document.documentElement.dataset.collapsed==='1'])})});
+   await p.mouse.move(Math.round(W/2),Math.round(H/2));
+   const gap=()=>p.evaluate(()=>{const bar=document.getElementById('topbar').getBoundingClientRect(),t=document.querySelector('main#app > .screen-title');if(!t)return {err:'no title'};const tr=t.getBoundingClientRect();
+     const x=Math.round(innerWidth/2);const el=document.elementFromPoint(x,Math.round(bar.bottom+1));
+     return {covered:tr.top<=bar.top+0.5&&tr.bottom>=bar.bottom-0.5,under:!!el&&!!el.closest('.screen-title,.topbar'),same:document.getElementById('topbar').parentElement===t.parentElement||true,tb:[tr.top,tr.bottom,bar.top,bar.bottom].map(v=>Math.round(v*10)/10).join('/')}});
+   // a snapshot of every thing the Board's rules are about, so each STATE can be asserted on its own (T-033 B1a)
+   const snap=()=>p.evaluate(()=>{const R=document.documentElement,m=document.querySelector('main#app').getBoundingClientRect(),th=document.querySelector('#topbar [data-theme-btn]').getBoundingClientRect(),t=document.querySelector('main#app > .screen-title'),tb=document.getElementById('topbar'),cs=(e,ps)=>getComputedStyle(e,ps);
+     const wide=innerWidth>=1000,lg=wide?document.querySelector(R.dataset.nav==='pinned'?'#sidebar .logo .mark':'#rail .mark').getBoundingClientRect():null,an=document.getElementById('anchor').getBoundingClientRect();
+     return {y:Math.round(scrollY),col:R.dataset.collapsed,ttl:R.dataset.title,mx:Math.round(m.left*10)/10,mw:Math.round(m.width*10)/10,thx:Math.round(th.left),thy:Math.round(th.top),
+       barLine:+cs(tb,'::after').opacity,barBg:+cs(tb,'::before').opacity,titleOp:+cs(t).opacity,titleLine:cs(t).borderBottomColor!=='rgba(0, 0, 0, 0)'&&cs(t).borderBottomColor!=='transparent',
+       logo:lg?[Math.round(lg.left+lg.width/2),Math.round(lg.top+lg.height/2)]:null,anchor:[Math.round(an.left+an.width/2),Math.round(an.top+an.height/2)],
+       aHb:+cs(document.querySelector('.a-hb')).opacity,aLogo:+cs(document.querySelector('.a-logo')).opacity,anchorInert:document.getElementById('anchor').inert,
+       sideOp:+cs(document.getElementById('sidebar')).opacity,railOp:+cs(document.getElementById('rail')).opacity,navInert:[document.getElementById('sidebar').inert,document.getElementById('rail').inert],
+       ring:cs(tb.querySelector('[data-theme-btn]')).boxShadow!=='none',barInert:tb.inert,miniInert:document.getElementById('mini').inert,miniOp:+cs(document.getElementById('mini')).opacity,pillrow:cs(document.querySelector('.pillrow')).display,
+       menuBtnOp:+cs(tb.querySelector('.menu-btn')).opacity,sw:document.documentElement.scrollWidth<=innerWidth}});
+   let g=await gap();ok(g.covered&&g.under,`no slit at scroll 0: title covers the bar, nothing but bar or title just under it (${g.tb})`);
+   const top0=await snap();
+   ok(top0.col!=='1'&&top0.ttl==='1'&&top0.titleOp===1&&top0.barBg===1&&top0.barLine===0&&!top0.titleLine&&(W<1000||top0.aHb===0)&&top0.anchorInert,`${W} top: bar and greeting shown, no hairline at all, the anchor is invisible and inert`);
+   await p.mouse.wheel(0,24);await p.waitForTimeout(150);g=await gap();ok(g.covered&&g.under,`no slit at scroll 24 (${g.tb})`);
+   ok(await p.evaluate(()=>document.documentElement.dataset.collapsed!=='1'),'collapse: still showing at y<=24');
+   for(let i=0;i<8;i++){await p.mouse.wheel(0,40);await p.waitForTimeout(80)}
+   const log=await p.evaluate(()=>window.__cl);const flip=log.find(e=>e[1]);
+   ok(!!flip&&flip[0]>96,`collapse flips only above y=96: first flip at y=${flip?flip[0]:'none'} (every event with y<=96 stayed expanded: ${log.filter(e=>e[0]<=96).every(e=>!e[1])})`);
+   ok(log.filter(e=>e[0]<=96).every(e=>!e[1]),'collapse: never collapsed at y<=96 (log of every scroll event checked)');
+   await p.waitForTimeout(500);
+   // ---- STATE: collapsed (scrolled down) ----
+   let c=await snap();
+   ok(c.col==='1'&&c.barLine===0&&c.titleOp===0&&c.sw,`${W} collapsed: no hairline (bar line ${c.barLine}), the greeting is faded, no sideways scroll`);
+   ok(c.mx===top0.mx&&c.mw===top0.mw,`${W} collapsed: content column x and width identical to the top (${c.mx}/${c.mw} against ${top0.mx}/${top0.mw})`);
+   ok(await p.evaluate(()=>{const m=document.querySelector('main#app').getBoundingClientRect();return Math.abs(m.left-(innerWidth-m.right))<=1}),`${W}: the content column is centred in the window (equal space left and right)`);
+   ok(await p.evaluate(()=>{const h=document.querySelector('#app h1');return !!h&&getComputedStyle(h).display!=='none'&&getComputedStyle(h).visibility!=='hidden'}),`${W} collapsed: the h1 is still in the accessibility tree`);
+   if(W>=1000){
+     ok(c.pillrow==='none'&&c.miniInert,`${W} collapsed: no mini island on a wide screen`);
+     ok(c.aHb===1&&c.aLogo===0&&!c.anchorInert&&Math.abs(c.anchor[0]-c.logo[0])<=1&&Math.abs(c.anchor[1]-c.logo[1])<=1,`${W} collapsed: the logo spot shows a hamburger, exactly over the logo (anchor ${c.anchor} / logo ${c.logo})`);
+     ok(c.sideOp===0&&c.railOp===0&&c.navInert[0]&&c.navInert[1],`${W} collapsed: the island and the rail have faded and are inert`);
+     ok(c.thx===top0.thx&&c.thy===top0.thy&&c.ring&&!c.barInert,`${W} collapsed: the theme button has not moved (${c.thx},${c.thy}), it has a ring (floating circle) and stays live`);
+   } else {
+     ok(c.miniOp===1&&!c.miniInert&&c.barInert&&c.menuBtnOp===0,`${W} collapsed: the bar melted into the pill (pill visible and live, bar controls faded and inert)`);
+     const pl=await p.evaluate(()=>{const m=document.getElementById('mini'),r=m.getBoundingClientRect();return {cx:Math.round(r.left+r.width/2),labs:[...m.querySelectorAll('a,button')].map(x=>x.getAttribute('aria-label')).join('|'),big:[...m.querySelectorAll('a,button')].every(x=>x.getBoundingClientRect().width>=44)}});
+     ok(Math.abs(pl.cx-W/2)<=2&&pl.big&&/^Open menu\|CELPIP Study Hub, go to Home\|Theme: /.test(pl.labs),`${W} collapsed: the pill is centred and holds menu, Home mark, theme (${pl.labs})`);
+   }
+   // ---- scroll far down, then scroll UP by a short distance: the bar must stay hidden (Board: it came back too easily) ----
+   await p.evaluate(()=>window.scrollTo(0,1600));await p.waitForTimeout(250);
+   for(let i=0;i<6;i++){await p.mouse.wheel(0,-50);await p.waitForTimeout(70)}
+   await p.waitForTimeout(300);c=await snap();
+   ok(c.col==='1'&&c.y>1000,`${W}: bar stays hidden after a 300px scroll up (y=${c.y}, collapsed=${c.col})`);
+   for(let i=0;i<14;i++){await p.mouse.wheel(0,-50);await p.waitForTimeout(70)}
+   await p.waitForTimeout(400);c=await snap();
+   ok(c.col==='0'&&c.y>200,`${W}: bar returns after an upward run of 60% of a screen (about ${Math.round(0.6*H)}px; y=${c.y})`);
+   ok(c.ttl==='0'&&c.titleOp===0&&c.barBg===1&&c.barLine===1&&!c.titleLine,`${W} mid-page: greeting stays hidden, only the bar row has a background, exactly one hairline (the bar's)`);
+   if(W>=1000)ok(c.aHb===0&&c.anchorInert&&c.sideOp===1||c.railOp===1,`${W}: the sidebar or rail is back and the hamburger has turned into the logo again`);
+   else ok(c.miniOp===0&&c.miniInert&&!c.barInert&&c.menuBtnOp===1,`${W}: the pill has turned back into the bar`);
+   await p.evaluate(()=>window.scrollTo(0,120));await p.waitForTimeout(500);c=await snap();
+   ok(c.col==='0'&&c.ttl==='1'&&c.titleOp===1&&c.titleLine&&c.barLine===0,`${W} y=120: greeting shows again (y<=160) with the title's hairline only, never both lines (bar line ${c.barLine})`);
+   await p.evaluate(()=>window.scrollTo(0,60));await p.waitForTimeout(400);c=await snap();
+   ok(c.col==='0'&&c.titleLine&&c.barLine===0,`${W} y=60: one hairline (the title's), not collapsed`);
+   await p.evaluate(()=>window.scrollTo(0,0));await p.waitForTimeout(400);c=await snap();
+   ok(c.col==='0'&&!c.titleLine&&c.barLine===0&&c.titleOp===1,`${W} back at the top: no hairline, greeting shown`);
+   // ---- the hamburger / pill menu opens the island as an overlay, Esc closes it, focus returns ----
+   await p.evaluate(()=>window.scrollTo(0,1600));await p.waitForTimeout(400);
+   const opener=W>=1000?'#anchor':'#mini [data-menu-open]';
+   await p.click(opener);await p.waitForTimeout(500);
+   let o=await p.evaluate(()=>{const s=document.getElementById('sidebar'),r=s.getBoundingClientRect();return {ov:document.documentElement.dataset.overlay,vis:getComputedStyle(s).visibility,op:+getComputedStyle(s).opacity,left:Math.round(r.left),inert:s.inert,content:document.getElementById('content').inert,act:document.activeElement.id,sc:+getComputedStyle(document.getElementById('scrim')).opacity,col:document.documentElement.dataset.collapsed}});
+   ok(o.ov==='open'&&o.vis==='visible'&&o.op===1&&!o.inert&&o.content&&o.act==='islandX'&&o.sc===1&&o.left>=0&&o.left<=16,`${W} collapsed: the hamburger opens the island as an overlay from the left (scrim on, page inert, focus on the X)`);
+   await p.keyboard.press('Escape');await p.waitForTimeout(500);
+   o=await p.evaluate(()=>({ov:document.documentElement.dataset.overlay||'',act:document.activeElement.id||document.activeElement.className,col:document.documentElement.dataset.collapsed,inert:document.getElementById('sidebar').inert}));
+   ok(o.ov===''&&o.col==='1'&&o.inert&&(W>=1000?o.act==='anchor':/icon-btn/.test(o.act)),`${W}: Esc closes the overlay, focus returns to the control that opened it, bar still collapsed`);
+   if(W===1440){
+     await p.click('#anchor');await p.waitForTimeout(500);await p.mouse.click(1200,400);await p.waitForTimeout(400);ok(!(await p.evaluate(()=>document.documentElement.dataset.overlay)),'1440: a click on the dimmed page closes the scrolled overlay');
+     await p.click('#anchor');await p.waitForTimeout(500);await p.click('#islandX');await p.waitForTimeout(400);ok(!(await p.evaluate(()=>document.documentElement.dataset.overlay)),'1440: the X closes the scrolled overlay');
+   }
+   await p.evaluate(()=>window.scrollTo(0,0));await p.waitForTimeout(300);ok(await p.evaluate(()=>document.documentElement.dataset.collapsed!=='1'),'at scroll 0 the bar is always shown');
+   ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`no sideways scroll at ${W}`);
+   await p.evaluate(()=>{document.querySelector('main#app').style.minHeight=''})});
+
 
  await step('learn: contents list',async()=>{
    await p.setViewportSize({width:1280,height:700});await go('#/learn/reading');
@@ -326,7 +473,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(await q.evaluate(()=>!document.documentElement.classList.contains('vt-route')),'motion on: transition class removed afterwards');
    await q.click('#mainNav a[data-section=practice]');await q.waitForTimeout(900);
    ok(/Practice/.test(await q.$eval('#app h1',e=>e.textContent)),'motion on: a second change works');
-   await q.click('.sidebar [data-theme-set=dark]');await q.waitForTimeout(500);ok((await q.evaluate(()=>document.documentElement.dataset.theme))==='dark','motion on: theme change works');
+   await q.click('#themeBtn');await q.click('#themeBtn');await q.waitForTimeout(500);ok((await q.evaluate(()=>document.documentElement.dataset.theme))==='dark','motion on: theme change works');
    ok(!e2.length,'motion on: no page errors'+(e2.length?' ('+e2[0]+')':''));await c2.close()});
 
  // ===== T-029 turn B: practice tools =====
@@ -600,7 +747,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await p.evaluate(()=>toast('Could not do that','error'));await p.waitForTimeout(400);
    await go('#/plan');ok(await p.$$eval('#toastHost .toast',t=>t.length)===0,'toast: cleared when the screen changes');
    // screenshots and phone
-   const shot=async n=>{if(SHOTS)await p.screenshot({path:SHOTS+n,fullPage:true})};
+   const shot=async n=>{if(SHOTS)await p.screenshot({path:sp(n),fullPage:true})};
    await p.evaluate(()=>localStorage.setItem('celpip_theme','light'));await p.reload();await go('#/dashboard');await p.waitForTimeout(300);await shot('dash-1440-light.png');
    await p.evaluate(()=>localStorage.setItem('celpip_theme','dark'));await p.reload();await go('#/dashboard');await p.waitForTimeout(300);await shot('dash-1440-dark.png');
    await p.evaluate(()=>localStorage.setItem('celpip_theme','light'));await p.reload();
@@ -791,7 +938,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(/^\s*Home\s*$/.test(await p.$eval('#sidebar a[data-section="dashboard"]',e=>e.textContent))&&await p.$eval('#sidebar a[data-section="dashboard"] svg use',u=>u.getAttribute('href'))==='#i-dashboard'&&(await p.title()).startsWith('Home')&&(await txt('#app h1'))==='Hello, Secret Name','home: menu says Home with its icon; title says Home; heading greets by name');
    const lk=await p.$eval('.tile-plan a.card-link',a=>({href:a.getAttribute('href'),inner:a.querySelectorAll('a,button,input,select,textarea,[tabindex]').length}));
    ok(lk.href==='#/plan'&&lk.inner===0,'home card: the link goes to #/plan and holds no other interactive element');
-   const bx=await (await p.$('.tile-plan')).boundingBox();await p.mouse.click(bx.x+bx.width-24,bx.y+bx.height/2);await p.waitForTimeout(250);
+   await p.$eval('.tile-plan',e=>e.scrollIntoView({block:'center'}));const bx=await (await p.$('.tile-plan')).boundingBox();await p.mouse.click(bx.x+bx.width-24,bx.y+bx.height/2);await p.waitForTimeout(250);
    ok(await p.evaluate(()=>location.hash)==='#/plan','home card: a click anywhere on the card opens My plan');
    await go('#/dashboard');await p.focus('.tile-plan a.card-link');await p.keyboard.press('Enter');await p.waitForTimeout(250);
    ok(await p.evaluate(()=>location.hash)==='#/plan','home card: Enter on the focused heading link opens My plan');
@@ -879,7 +1026,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  // ===== T-031 turn A: app feel (install, icons, iPhone fit, update notice, offline label, storage safety, badge, mastery cells, contrast) =====
  const ptxt=(pg,s)=>pg.$eval(s,e=>e.textContent).catch(()=>null);
  const IPHONE_UA='Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
- const shotTo=async(pg,n,sel)=>{if(!SHOTS)return;if(sel){const el=await pg.$(sel);if(el){await el.screenshot({path:SHOTS+n});return}}await pg.screenshot({path:SHOTS+n})};
+ const shotTo=async(pg,n,sel)=>{if(!SHOTS)return;if(sel){const el=await pg.$(sel);if(el){await el.screenshot({path:sp(n)});return}}await pg.screenshot({path:sp(n)})};
  // opens a fresh browser context (own storage, no 100x clock) with an optional script run before the app starts
  const fresh=async(opts,init)=>{const c=await b.newContext(opts);if(init)await c.addInitScript(init);const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error')errs.push('console: '+m.text())});await pg.goto(BASE);await pg.waitForTimeout(700);return {c,pg}};
  const hashGo=async(pg,h)=>{await pg.evaluate(h=>{location.hash=h},h);await pg.waitForTimeout(250)};
@@ -901,7 +1048,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(ieReal.length===0,'installability: Chrome reports no installability errors (Page.getInstallabilityErrors)');
    const m=JSON.parse(am.data||'{}');
    ok(m.id&&m.name==='CELPIP Study Hub'&&m.short_name==='CELPIP'&&m.description&&m.start_url&&m.scope&&m.display==='standalone'&&JSON.stringify(m.categories)==='["education"]','manifest: id, names, description, start_url, scope, standalone, categories');
-   ok(m.theme_color!=='#f97316'&&m.background_color!=='#fafaf9'&&/^#[0-9a-f]{6}$/i.test(m.theme_color)&&m.theme_color==='#f2f6f8'&&m.background_color==='#f2f6f8','manifest: colours are Lakeline tokens (--bg), not the old orange ('+m.theme_color+')');
+   ok(m.theme_color!=='#f97316'&&m.background_color!=='#fafaf9'&&/^#[0-9a-f]{6}$/i.test(m.theme_color)&&m.theme_color==='#FFFFFF'&&m.background_color==='#FFFFFF','manifest: colours are Lakeline tokens (--bg), not the old orange ('+m.theme_color+')');
    const any=m.icons.filter(i=>i.purpose==='any'),mk=m.icons.filter(i=>i.purpose==='maskable');
    ok(any.length===2&&mk.length===1&&m.icons.every(i=>i.purpose!=='any maskable'),'manifest: separate "any" (192, 512) and "maskable" (512) icon entries');
    ok(m.shortcuts.length===3&&m.shortcuts.map(s=>s.url).join()==='./#/plan,./#/practice,./#/exam'&&m.shortcuts.every(s=>s.icons&&s.icons[0].sizes==='96x96'),'manifest: three shortcuts (My plan, Practice, Timed Exam), each with a 96px icon');
@@ -910,11 +1057,11 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const px=await pg.evaluate(async()=>{const im=new Image();im.src='icon-maskable-512.png';await im.decode();const c=document.createElement('canvas');c.width=c.height=512;const x=c.getContext('2d');x.drawImage(im,0,0);const g=(a,b)=>Array.from(x.getImageData(a,b,1,1).data).join();return [g(2,2),g(509,509)]});
    ok(px[0]==='11,100,119,255'&&px[1]==='11,100,119,255','maskable icon: teal reaches the corners (full-bleed), accent #0b6477 ('+px+')');
    const head=await pg.evaluate(()=>{const q=s=>{const e=document.querySelector(s);return e?e.getAttribute('content')||e.getAttribute('href'):null};return {cap:q('meta[name="apple-mobile-web-app-capable"]'),title:q('meta[name="apple-mobile-web-app-title"]'),bar:q('meta[name="apple-mobile-web-app-status-bar-style"]'),vp:q('meta[name="viewport"]'),touch:q('link[rel="apple-touch-icon"]'),fav:q('link[rel="icon"][type="image/svg+xml"]')}});
-   ok(head.cap==='yes'&&head.title==='CELPIP'&&head.bar==='default'&&/viewport-fit=cover/.test(head.vp)&&head.touch==='apple-touch-icon-180.png'&&head.fav==='favicon.svg','iPhone fit: capable, title "CELPIP", status bar style, viewport-fit=cover, touch icon, favicon ('+JSON.stringify(head)+')');
+   ok(head.cap==='yes'&&head.title==='CELPIP'&&head.bar==='black-translucent'&&/viewport-fit=cover/.test(head.vp)&&head.touch==='apple-touch-icon-180.png'&&head.fav==='favicon.svg','iPhone fit: capable, title "CELPIP", status bar style, viewport-fit=cover, touch icon, favicon ('+JSON.stringify(head)+')');
    const css=await pg.evaluate(async()=>(await fetch('css/style.css')).text());
-   ok(/\.topbar \{[^}]*safe-area-inset-top/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
+   ok(/\.topbar \{[^}]*(safe-area-inset-top|var\(--sat\))/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
    ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).overscrollBehaviorY==='contain'),'overscroll-behavior-y: contain on the page (a drag down does not reload mid-exam)');
-   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v10')),'service worker cache is celpip-v10');
+   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v13')),'service worker cache is celpip-v13');
    await c.close()});
 
  await step('T-031 install button: Chrome event, iPhone steps, already installed',async()=>{
@@ -926,7 +1073,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const vis=await pg.isVisible('#app [data-install-go]');const lab=await ptxt(pg,'#app [data-install-go]');
    ok(vis&&/Install app/.test(lab||''),'install: Settings shows an "Install app" button ('+(lab||'').trim()+')');
    await shotTo(pg,'settings-install-chrome.png','#app .install-box');
-   ok(await pg.evaluate(()=>!!document.querySelector('#moreSheet [data-install-go]')&&!document.querySelector('#moreSheet [data-install-box]').hidden),'install: the More sheet has the button too');
+   ok(await pg.evaluate(()=>!!document.querySelector('#sidebar [data-install-go]')&&!document.querySelector('#sidebar [data-install-box]').hidden),'install: the phone drawer has the button too');
    const bb=await pg.$eval('#app [data-install-go]',e=>{const r=e.getBoundingClientRect();return [r.width,r.height]});ok(bb[0]>=44&&bb[1]>=44,'install: button is at least 44px ('+bb.map(Math.round)+')');
    await pg.click('#app [data-install-go]');await pg.waitForTimeout(150);
    ok(await pg.evaluate(()=>window.__pr===1)&&await pg.$eval('#app [data-install-box]',e=>e.hidden),'install: tap calls prompt() once, then the button goes away');
@@ -935,8 +1082,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const st=await ios.pg.evaluate(()=>{const b=document.querySelector('#app [data-install-box]');return {hidden:b.hidden,li:b.querySelectorAll('li').length,share:!!b.querySelector('svg.share-ico use[href="#i-share"]'),text:b.textContent,btn:!!b.querySelector('[data-install-go]')}});
    ok(!st.hidden&&st.li===2&&st.share&&/Add to Home Screen/.test(st.text)&&!st.btn,'install on iPhone Safari: two steps (Share icon drawn inline, Add to Home Screen), no button');
    await shotTo(ios.pg,'settings-install-iphone.png','#app .install-box');
-   await ios.pg.evaluate(()=>document.getElementById('moreBtn').click());await ios.pg.waitForTimeout(250);
-   ok(await ios.pg.isVisible('#moreSheet [data-install-box] .install-steps'),'install on iPhone: the More sheet shows the steps');
+   await ios.pg.click('#topbar .menu-btn');await ios.pg.waitForTimeout(400);
+   ok(await ios.pg.isVisible('#sidebar [data-install-box] .install-steps'),'install on iPhone: the drawer shows the steps');
    await ios.c.close();
    const sa=await fresh({viewport:{width:390,height:844},userAgent:IPHONE_UA,isMobile:true,hasTouch:true},()=>Object.defineProperty(navigator,'standalone',{value:true}));await hashGo(sa.pg,'#/settings');
    ok(await sa.pg.$eval('#app [data-install-box]',e=>e.hidden),'install: hidden when already installed (navigator.standalone)');
@@ -1128,8 +1275,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const {c,pg}=await fresh({viewport:{width:1280,height:900}},seedOld);
    await pg.evaluate(()=>{window.__xss=0});
    await hashGo(pg,'#/history');const rowsA=await pg.$$eval('#app .btn-icon',x=>x.length);
-   await pg.click('.sidebar [data-profile-open]');await pg.waitForTimeout(200);
-   ok(!!(await pg.$('#whoDlg[open]'))&&(await pg.$$('#whoDlg .who-item')).length===1,'chooser: the profile button opens "Who\'s studying?" listing the profile');
+   await pg.evaluate(()=>ProfileUI.openChooser());await pg.waitForTimeout(200);
+   ok(!!(await pg.$('#whoDlg[open]'))&&(await pg.$$('#whoDlg .who-item')).length===1,'chooser: the chooser (rail initial, start-up) lists the profile');
    await pg.fill('#whoNewName','<img src=x onerror=window.__xss=1>');await pg.click('#whoAddBtn');await pg.waitForTimeout(300);
    const sw=await pg.evaluate(()=>({name:Profiles.active().name,btn:document.querySelector('.sidebar .profile-name').textContent,imgs:document.querySelectorAll('#app img, .sidebar img, #whoDlg img').length,xss:window.__xss||0,list:Profiles.list().length}));
    ok(sw.list===2&&sw.name==='<img src=x onerror=window.__xss=1>'&&sw.btn===sw.name&&sw.imgs===0&&sw.xss===0,'names: a name made of markup is shown as text; no element, no script');
@@ -1185,10 +1332,10 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const one=await fresh({viewport:{width:1280,height:900}});await one.pg.evaluate(()=>Profiles.setAsk(true));await one.pg.reload();await one.pg.waitForTimeout(500);
    ok(!(await one.pg.$('#whoDlg[open]')),'chooser: never opens at start with only one profile');await one.c.close();
    const m=await fresh({viewport:{width:390,height:844},isMobile:true,hasTouch:true},seedOld);
-   await m.pg.click('#moreBtn');await m.pg.waitForTimeout(300);
-   ok(!!(await m.pg.$('#moreSheet [data-profile-open]')),'switcher: the More sheet carries the profile button on a phone');
-   await shotTo(m.pg,'profile-switcher-390.png','#moreSheet');
-   await m.pg.click('#moreSheet [data-profile-open]');await m.pg.waitForTimeout(300);ok(!!(await m.pg.$('#whoDlg[open]'))&&!(await m.pg.$('#moreSheet[open]')),'switcher: from the More sheet it opens the chooser (one box at a time)');
+   await m.pg.click('#topbar .menu-btn');await m.pg.waitForTimeout(400);
+   ok(!!(await m.pg.$('#sidebar [data-profile-panel-open]')),'switcher: the phone drawer carries the profile button on a phone');
+   await shotTo(m.pg,'profile-switcher-390.png','#sidebar');
+   await m.pg.click('#sidebar [data-profile-panel-open]');await m.pg.waitForTimeout(400);ok(!(await m.pg.$('#whoDlg[open]'))&&!!(await m.pg.$('html[data-overlay=open]'))&&await m.pg.evaluate(()=>document.getElementById('sidebar').hasAttribute('data-panel')),'switcher: from the drawer the row opens the profile panel inside the drawer (no pop-up)');await m.pg.evaluate(()=>{Shell.nav.closeOverlay(true);ProfileUI.openChooser()});await m.pg.waitForTimeout(300);ok(!!(await m.pg.$('#whoDlg[open]'))&&!(await m.pg.$('html[data-overlay=open]')),'chooser: still opens on its own (start-up, rail initial) and the drawer is closed first');
    const bb=await m.pg.$eval('#whoDlg .who-item',e=>{const r=e.getBoundingClientRect();return [r.width,r.height]});ok(bb[1]>=44,'chooser: each profile row is at least 44px tall ('+bb[1]+')');
    await shotTo(m.pg,'chooser-390.png');await m.c.close()});
 
@@ -1595,7 +1742,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await pg.evaluate(()=>{location.hash='#/practice/reading'});await pg.waitForTimeout(500);
    const busy=await pg.evaluate(()=>{const k=document.querySelector('.loading-card');return {busy:document.getElementById('app').getAttribute('aria-busy'),card:k&&k.textContent,role:k&&k.getAttribute('role'),h1:!!document.querySelector('#app h1')}});
    ok(busy.busy==='true'&&/Loading practice/.test(busy.card||'')&&busy.role==='status'&&!busy.h1,'loading: after 150 ms the page says "Loading practice..." with aria-busy and no old screen ('+(busy.card||'').trim()+')');
-   if(SHOTS)await pg.screenshot({path:SHOTS+'t032-loading.png'});
+   if(SHOTS)await pg.screenshot({path:sp('t032-loading.png')});
    await pg.evaluate(()=>{location.hash='#/settings'});await pg.waitForTimeout(2200);
    const after=await pg.evaluate(()=>({h1:(document.querySelector('#app h1')||{}).textContent,qb:!!document.getElementById('quickBtn'),busy:document.getElementById('app').hasAttribute('aria-busy'),card:!!document.querySelector('.loading-card')}));
    ok(after.h1==='Settings'&&!after.qb&&!after.busy&&!after.card,'loading: moving to Settings mid-load leaves Settings showing; the Reading screen is never drawn ('+after.h1+')');
@@ -1614,7 +1761,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await pg.evaluate(()=>{location.hash='#/practice/reading'});await pg.waitForTimeout(800);
    const e=await pg.evaluate(()=>{const k=document.querySelector('.load-error');return {txt:k&&k.textContent,role:k&&k.getAttribute('role'),btn:!!document.getElementById('loadRetry'),busy:document.getElementById('app').hasAttribute('aria-busy'),h1:(document.querySelector('#app h1')||{}).textContent}});
    ok(e.btn&&e.role==='alert'&&/could not be loaded/.test(e.txt||'')&&!e.busy&&!!e.h1,'failure: a plain message, a heading and a Retry button with role=alert ('+(e.h1||'')+')');
-   if(SHOTS)await pg.screenshot({path:SHOTS+'t032-load-error.png'});
+   if(SHOTS)await pg.screenshot({path:sp('t032-load-error.png')});
    fail=false;await pg.click('#loadRetry');await pg.waitForTimeout(1500);
    ok(!!(await pg.$('#quickBtn'))&&!(await pg.$('#loadRetry')),'failure: Retry fetches the failed file again and the screen opens');
    await c.close();
@@ -1642,8 +1789,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  await step('T-032 offline after the first visit still opens every route',async()=>{
    const c=await b.newContext({viewport:{width:1280,height:900}});const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));
    await pg.goto(BASE);
-   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v10')&&(await (await caches.open('celpip-v10')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
-   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v10');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
+   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v13')&&(await (await caches.open('celpip-v13')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
+   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v13');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
    ok(cached.length===18&&cached.every(Boolean),'offline: sw.js saved all 16 data files plus loader.js and meta.js on the first visit ('+cached.filter(Boolean).length+' of '+cached.length+')');
    await pg.reload();await pg.waitForTimeout(800);
    ok(await pg.evaluate(()=>!!navigator.serviceWorker.controller),'offline: the page is controlled by the service worker');
@@ -1669,7 +1816,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const en=await pg.evaluate(()=>{const e=document.getElementById('explainStatusEnd'),f=document.getElementById('nextPassage');return {t:e&&e.textContent,btn:!!(e&&e.querySelector('button')),role:e&&e.getAttribute('role'),same:!!e&&e.parentElement===f.parentElement}});
    ok(st.score&&st.btn&&/could not be loaded/.test(st.t||'')&&st.n===0,'explanations: when the file fails the score and answers stay, a message and Retry appear near the score');
    ok(en.btn&&en.same&&en.role==='status'&&/could not be loaded/.test(en.t||''),'explanations: the same message and a Retry button also sit beside the Next / Finish button (role=status)');
-   if(SHOTS){await pg.evaluate(()=>window.scrollTo(0,0));await pg.screenshot({path:SHOTS+'t032-explain-error-top.png'});await pg.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await pg.waitForTimeout(200);await pg.screenshot({path:SHOTS+'t032-explain-error-bottom.png'})}
+   if(SHOTS){await pg.evaluate(()=>window.scrollTo(0,0));await pg.screenshot({path:sp('t032-explain-error-top.png')});await pg.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await pg.waitForTimeout(200);await pg.screenshot({path:sp('t032-explain-error-bottom.png')})}
    fail=false;await pg.click('#explainStatusEnd button');await pg.waitForSelector('.explain',{timeout:5000}).catch(()=>{});
    ok(await pg.$$eval('.explain',x=>x.length)>0&&!(await pg.$('#explainStatus'))&&!(await pg.$('#explainStatusEnd')),'explanations: Retry loads them and fills the slots');
    await c.close()});
@@ -1688,5 +1835,363 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await pg.click('#nextPassage');await pg.waitForSelector('.result-card h1',{timeout:5000}).catch(()=>{});
    ok(/Practice Complete/.test(await ptxt(pg,'.result-card h1')||''),'timed: Finish works before the explanations arrive');
    await c.close()});
+
+ // ===== T-033 B1b: the profile panel inside the island and the phone drawer =====
+ await step('T-033 B1b profile panel: opens from the row, closes with Back, X and Esc, focus in and back, switching works',async()=>{
+   const st=pg=>pg.evaluate(()=>{const s=document.getElementById('sidebar'),pn=document.getElementById('profPanel'),row=document.querySelector('#sidebar [data-profile-panel-open]'),a=document.activeElement;
+     return {panel:s.hasAttribute('data-panel'),vis:getComputedStyle(pn).visibility,op:getComputedStyle(pn).opacity,panelInert:pn.inert,navInert:document.getElementById('mainNav').inert,footInert:s.querySelector('.isl-foot').inert,exp:row&&row.getAttribute('aria-expanded'),ctl:row&&row.getAttribute('aria-controls'),
+       inPanel:pn.contains(a),back:!!a.closest('[data-pp-back]'),onRow:a===row,ov:document.documentElement.dataset.overlay||'',h:(pn.querySelector('h2')||{}).textContent,xVis:s.querySelector('#islandX').getClientRects().length>0,kbd:!!s.querySelector('.isl-foot [data-shortcut-sheet]')}});
+   const modes=[
+     {name:'1440 pinned',vp:{width:1440,height:900},open:async()=>{},closeKeyEsc2:false,pinned:true},
+     {name:'1100 overlay',vp:{width:1100,height:800},open:async pg=>{await pg.click('[data-rail-expand]');await pg.waitForTimeout(450)},overlay:true},
+     {name:'390 drawer',vp:{width:390,height:844},open:async pg=>{await pg.click('#topbar .menu-btn');await pg.waitForTimeout(450)},overlay:true}];
+   for(const m of modes){
+     const {c,pg}=await fresh({viewport:m.vp});
+     await pg.evaluate(()=>{window.__xss=0;Profiles.create('Kofi');Profiles.switchTo(Profiles.list()[0].id)});await pg.waitForTimeout(300);
+     const shape0=await pg.evaluate(()=>({idx:Object.keys(JSON.parse(localStorage.getItem('celpip_profiles_v1'))).sort().join(),rec:Object.keys(Profiles.list()[0]).sort().join(),keys:Object.keys(localStorage).sort().join()}));
+     await m.open(pg);
+     let s=await st(pg);ok(!s.panel&&s.vis==='hidden'&&s.panelInert&&!s.navInert&&s.exp==='false'&&s.ctl==='profPanel',m.name+': panel closed at first (hidden, inert; row aria-expanded false, controls the panel)');
+     ok(await pg.$eval('#sidebar [data-profile-panel-open]',r=>/Studying as .*Open profile and switch/.test(r.getAttribute('aria-label'))&&r.textContent.indexOf('Profile and switch')>=0&&!document.querySelector('#sidebar [data-profile-open]')),m.name+': the lone pill is now a profile row ("Profile and switch"), no old chooser button inside the menu');
+     await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(500);s=await st(pg);
+     ok(s.panel&&s.vis==='visible'&&s.op==='1'&&!s.panelInert&&s.navInert&&s.footInert&&s.exp==='true'&&s.back&&s.h==='Profile'&&s.xVis,m.name+': the row opens the panel inside the menu (list and foot inert, row expanded, focus on Back, heading "Profile", X still visible)');
+     if(SHOTS&&(m.vp.width===1440||m.vp.width===390)){for(const th of ['light','dark']){await pg.evaluate(t=>document.documentElement.setAttribute('data-theme',t),th);await pg.waitForTimeout(150);await pg.screenshot({path:sp('b1b-'+m.vp.width+'-profile-panel-'+th+'.png')})}await pg.evaluate(()=>Shell.setTheme('light'))}
+     await pg.click('#profPanel [data-pp-back]');await pg.waitForTimeout(500);s=await st(pg);
+     ok(!s.panel&&s.vis==='hidden'&&!s.navInert&&s.onRow&&s.exp==='false'&&s.kbd,m.name+': Back closes the panel and focus returns to the row (keyboard shortcuts link still in the foot)');
+     await pg.keyboard.press('Enter');await pg.waitForTimeout(500);s=await st(pg);ok(s.panel&&s.back,m.name+': the row opens with the keyboard (Enter), focus on Back');
+     await pg.keyboard.press('Escape');await pg.waitForTimeout(500);s=await st(pg);
+     ok(!s.panel&&s.onRow&&s.ov===(m.overlay?'open':''),m.name+': Esc closes the panel first and focus returns to the row'+(m.overlay?' (the menu itself stays open)':''));
+     // switching from the panel works as before
+     await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(500);
+     const ids=await pg.evaluate(()=>Profiles.list().map(p=>p.id));
+     await pg.click('#profPanel [data-pp-id="'+ids[1]+'"]');await pg.waitForTimeout(500);
+     s=await st(pg);const sw=await pg.evaluate(()=>({a:Profiles.activeId,name:Profiles.active().name,row:document.querySelector('#sidebar .profile-name').textContent,cur:document.querySelector('#profPanel [aria-current="true"] .pp-prof-name').textContent,who:document.querySelector('.pp-who-name').textContent,act:document.activeElement.dataset.ppId}));
+     if(m.overlay){ok(sw.a===ids[1]&&sw.name==='Kofi'&&s.ov===''&&!s.panel,m.name+': switching in the panel changes the active profile; the page redraws for the new learner, which closes the overlay menu (as any page change does) and resets the panel');
+     await m.open(pg);await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(500);
+     ok(await pg.evaluate(()=>document.querySelector('#sidebar .profile-name').textContent==='Kofi'&&document.querySelector('#profPanel [aria-current="true"] .pp-prof-name').textContent==='Kofi'&&document.querySelector('.pp-who-name').textContent==='Kofi'),m.name+': reopened, the row and the panel name the new active profile')}
+     else ok(sw.a===ids[1]&&sw.name==='Kofi'&&sw.row==='Kofi'&&sw.cur==='Kofi'&&sw.who==='Kofi'&&s.panel&&sw.act===ids[1],m.name+': switching in the panel changes the active profile (row, panel and screen follow); the panel stays open; focus stays on the chosen profile');
+     const shape1=await pg.evaluate(()=>({idx:Object.keys(JSON.parse(localStorage.getItem('celpip_profiles_v1'))).sort().join(),rec:Object.keys(Profiles.list()[0]).sort().join(),keys:Object.keys(localStorage).sort().join()}));
+     ok(shape1.idx===shape0.idx&&shape1.rec===shape0.rec,m.name+': profile data shape unchanged (index keys "'+shape1.idx+'", record keys "'+shape1.rec+'")');
+     // add through the panel with a name made of markup: shown as text only
+     await pg.click('#profPanel [data-pp-add]');await pg.fill('#pp-add-name','<img src=x onerror=window.__xss=1>');await pg.click('#profPanel .pp-form .btn-primary');await pg.waitForTimeout(500);
+     const ad=await pg.evaluate(()=>({n:Profiles.list().length,name:Profiles.active().name,imgs:document.querySelectorAll('#sidebar img, #app img').length,xss:window.__xss||0,txt:document.querySelector('.pp-who-name').textContent}));
+     ok(ad.n===3&&ad.name==='<img src=x onerror=window.__xss=1>'&&ad.txt===ad.name&&ad.imgs===0&&ad.xss===0,m.name+': Add a profile in the panel works; a markup name is plain text (no element, no script)');
+     // rename inline, Esc closes only the form
+     if(m.overlay){await m.open(pg);await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(500)}   // adding switched the learner, which closed the overlay menu
+     await pg.click('#profPanel [data-pp-rename]');await pg.fill('#pp-rename-name','Ada');await pg.keyboard.press('Escape');await pg.waitForTimeout(300);s=await st(pg);
+     ok(s.panel&&!(await pg.$('#profPanel .pp-form'))&&await pg.evaluate(()=>Profiles.active().name!=='Ada'),m.name+': Esc inside the rename box cancels only the box (panel stays, name unchanged)');
+     await pg.click('#profPanel [data-pp-rename]');await pg.fill('#pp-rename-name','Ada');await pg.keyboard.press('Enter');await pg.waitForTimeout(400);
+     ok(await pg.evaluate(()=>Profiles.active().name==='Ada'&&document.querySelector('#sidebar .profile-name').textContent==='Ada'),m.name+': Rename saves with Enter');
+     ok(await pg.evaluate(()=>{const l=[...document.querySelectorAll('#profPanel a.pp-item')];return l.length===2&&l.every(a=>a.getAttribute('href')==='#/settings')&&!!document.querySelector('#profPanel [data-pp-move]')}),m.name+': Move to another device and Settings are links to Settings (where the existing share and QR card is)');
+     // Tab stays in an open overlay (the inert page list is skipped)
+     if(m.overlay){let leak=false,seen=new Set();for(let i=0;i<40&&!leak;i++){await pg.keyboard.press('Tab');const r=await pg.evaluate(()=>({out:!document.activeElement.closest('#sidebar'),inert:!!document.activeElement.closest('[inert]'),lbl:document.activeElement.id||document.activeElement.className}));leak=r.out||r.inert;seen.add(r.lbl)}ok(!leak,m.name+': Tab in the panel never leaves it or lands on an inert part (40 presses)')}
+     // X
+     await pg.click('#islandX');await pg.waitForTimeout(500);
+     if(m.overlay){s=await st(pg);ok(s.ov===''&&!s.panel,m.name+': the X closes the menu and the panel with it');await m.open(pg);s=await st(pg);ok(s.ov==='open'&&!s.panel&&!s.navInert,m.name+': the menu opens again on the page list, panel closed')}
+     else{s=await st(pg);ok(!s.panel&&await pg.evaluate(()=>document.documentElement.dataset.nav==='rail'),m.name+': the X folds the island to the rail and leaves the panel closed')}
+     // reopen then second Esc closes an overlay
+     if(m.overlay){await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(450);await pg.keyboard.press('Escape');await pg.waitForTimeout(450);await pg.keyboard.press('Escape');await pg.waitForTimeout(450);s=await st(pg);ok(s.ov===''&&!s.panel,m.name+': a second Esc closes the menu')}
+     else{await pg.click('[data-rail-expand]');await pg.waitForTimeout(500);await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(450);await pg.keyboard.press('Escape');await pg.waitForTimeout(450);s=await st(pg);ok(!s.panel&&await pg.evaluate(()=>document.documentElement.dataset.nav==='pinned'),m.name+': pinned: Esc from the panel only returns to the list, the island stays pinned')}
+     await c.close();
+   }
+   });
+ // reduced motion: no slide, fade only
+ await step('T-033 B1b profile panel: reduced motion',async()=>{
+   const {c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'reduce'});
+   await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(150);
+   const r=await pg.evaluate(()=>({t:getComputedStyle(document.getElementById('profPanel')).transform,nav:getComputedStyle(document.getElementById('mainNav')).transform,vis:getComputedStyle(document.getElementById('profPanel')).visibility,d:getComputedStyle(document.getElementById('profPanel')).transitionDuration}));
+   ok(r.vis==='visible'&&(r.t==='none'||r.t==='matrix(1, 0, 0, 1, 0, 0)')&&(r.nav==='none'||r.nav==='matrix(1, 0, 0, 1, 0, 0)'),'reduced motion: the panel and the list do not travel (transform '+r.t+' / '+r.nav+', duration '+r.d+')');
+   await c.close()});
+
+ // ---------- T-033 B2a: the Arrange menu (order of pages, four bottom-bar pages, per profile, validated) ----------
+ await step('T-033 B2a Arrange menu: default, reorder, bar choice, persistence, profiles, tampering, transfer, screenshots',async()=>{
+   const DEF=['dashboard','learn','practice','review','vocab','grammar','notes','plan','exam','history','settings'],DBAR=['dashboard','practice','plan','exam'];
+   const {c,pg}=await fresh({viewport:{width:390,height:844},reducedMotion:'reduce'});
+   await pg.evaluate(()=>{window.__xss=0});
+   const lay=()=>pg.evaluate(()=>{const ids=sel=>[...document.querySelectorAll(sel)].map(a=>a.dataset.section);
+     const drawer=[...document.querySelectorAll('#mainNav>a')].filter(a=>getComputedStyle(a).display!=='none').map(a=>a.dataset.section);
+     return {side:ids('#mainNav>a'),rail:ids('#rail .rail-list>a'),bar:ids('#tabBar>a'),drawer,stored:localStorage.getItem(Profiles.key('celpip_navlayout_v1')),cur:document.querySelector('#tabBar [aria-current=page]')&&document.querySelector('#tabBar [aria-current=page]').dataset.section}});
+   const sameArr=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+   const openSettings=async()=>{await pg.evaluate(()=>{if(location.hash==='#/settings')render();else location.hash='#/settings'});await pg.waitForTimeout(350)};
+   const live=()=>pg.$eval('#arrLive',e=>e.textContent).catch(()=>null);
+   const status=()=>pg.$eval('.arr-status',e=>e.textContent.trim());
+   const rowIds=()=>pg.$$eval('.arr-row',r=>r.map(x=>x.dataset.id));
+   const focused=()=>pg.evaluate(()=>{const a=document.activeElement;return a?(a.dataset.act||'')+':'+(a.dataset.id||''):''});
+   // 1. default
+   let s=await lay();
+   ok(sameArr(s.side,DEF)&&sameArr(s.rail,DEF)&&sameArr(s.bar,DBAR)&&s.stored===null,'arrange: no saved layout gives the default (side menu, rail and bar), and nothing is stored');
+   ok(sameArr(s.drawer,DEF.filter(x=>DBAR.indexOf(x)<0)),'arrange: the phone drawer lists the seven pages that are not in the bar');
+   await openSettings();
+   ok((await rowIds()).join()===DEF.join()&&/4 of 4 chosen/.test(await status()),'arrange: the card lists 11 rows in the default order and says "4 of 4 chosen"');
+   const home=await pg.evaluate(()=>{const r=document.querySelector('.arr-row[data-id=dashboard]');return {up:r.querySelector('[data-act=up]').getAttribute('aria-disabled'),dn:r.querySelector('[data-act=down]').getAttribute('aria-disabled'),sw:r.querySelector('[role=switch]').getAttribute('aria-disabled')+'/'+r.querySelector('[role=switch]').getAttribute('aria-checked'),word:r.querySelector('.arr-word').textContent.trim(),learnUp:document.querySelector('.arr-row[data-id=learn] [data-act=up]').getAttribute('aria-disabled')}});
+   ok(home.up==='true'&&home.dn==='true'&&home.sw==='true/true'&&home.word==='Always in bar'&&home.learnUp==='true','arrange: Home cannot move and is locked into the bar; the row under Home cannot move above it');
+   // 2. reorder by keyboard
+   await pg.focus('[data-act=down][data-id=practice]');await pg.keyboard.press('Enter');await pg.waitForTimeout(200);
+   s=await lay();let want=DEF.slice();want.splice(2,1);want.splice(3,0,'practice');
+   ok(sameArr(s.side,want)&&sameArr(s.rail,want)&&sameArr(await rowIds(),want)&&JSON.parse(s.stored).order.join()===want.join()&&sameArr(s.bar,DBAR),'arrange: Move down on Practice with Enter changes the card, the side menu, the rail and the stored order (bar unchanged)');
+   ok((await focused())==='down:practice'&&/Practice moved to position 4 of 11\./.test(await live()),'arrange: focus stays on the same Move down button and a status line says "Practice moved to position 4 of 11."');
+   // by tap
+   await pg.click('[data-act=up][data-id=exam]');await pg.waitForTimeout(200);
+   s=await lay();want=want.slice();want.splice(8,1);want.splice(7,0,'exam');
+   ok(sameArr(s.side,want)&&sameArr(s.bar,['dashboard','practice','exam','plan']),'arrange: Move up by tap on Exam; the bar follows the list order (Home, Practice, Exam, My plan)');
+   // moves at the ends do nothing
+   const before=s.stored;await pg.click('[data-act=up][data-id=dashboard]',{force:true});await pg.click('[data-act=down][data-id=settings]',{force:true});   // force: Playwright treats aria-disabled as not clickable, but a real finger can tap itawait pg.waitForTimeout(100);
+   ok((await lay()).stored===before,'arrange: a disabled Move button (Home up, last row down) changes nothing');
+   // 3. bar choice and the 3-item draft
+   await pg.click('.arr-row[data-id=practice] [role=switch]');await pg.waitForTimeout(150);
+   s=await lay();
+   ok(/3 of 4 chosen\. Pick 1 more to save\./.test(await status())&&s.stored===before&&sameArr(s.bar,['dashboard','practice','exam','plan']),'arrange: switching Practice off shows "3 of 4 chosen. Pick 1 more to save." and saves nothing (menus keep the last valid layout)');
+   await pg.click('[data-act=up][data-id=grammar]');await pg.waitForTimeout(150);
+   ok((await lay()).stored===before,'arrange: a reorder made while the draft has 3 bar items is not saved either');
+   await pg.click('.arr-row[data-id=learn] [role=switch]');await pg.waitForTimeout(200);
+   s=await lay();const j=JSON.parse(s.stored);
+   ok(sameArr(j.bar,['dashboard','learn','exam','plan'].sort((a,b)=>j.order.indexOf(a)-j.order.indexOf(b)))&&sameArr(s.bar,j.bar)&&j.order.indexOf('grammar')===j.order.indexOf('vocab')-1&&/4 of 4 chosen\. Saved for/.test(await status()),'arrange: choosing a fourth item saves the whole draft at once (bar and the earlier reorder) and the bar shows it');
+   // full: a fifth cannot be turned on
+   const full=await pg.evaluate(()=>{const b=document.querySelector('.arr-row[data-id=review] [role=switch]');return b.getAttribute('aria-disabled')});
+   await pg.click('.arr-row[data-id=review] [role=switch]',{force:true});await pg.waitForTimeout(150);
+   ok(full==='true'&&/Bottom bar is full\. Turn one off first\./.test(await live())&&(await lay()).stored===s.stored,'arrange: with 4 chosen the other switches are disabled and say why; a fifth cannot be added');
+   // 4. persists across reload
+   const saved=(await lay()).stored;await pg.reload();await pg.waitForTimeout(700);s=await lay();
+   ok(s.stored===saved&&sameArr(s.side,j.order)&&sameArr(s.bar,j.bar),'arrange: the layout is still there after a reload (menus and storage)');
+   ok(await pg.evaluate(()=>location.hash==='#/settings')&&(await rowIds()).join()===j.order.join(),'arrange: a reload on Settings draws the card from the saved layout');
+   // reset
+   await pg.click('[data-act=reset]');await pg.waitForTimeout(200);s=await lay();
+   ok(sameArr(s.side,DEF)&&sameArr(s.bar,DBAR)&&s.stored===null,'arrange: "Reset to default" restores the default and removes the stored note');
+   // 5. per profile
+   await pg.click('[data-act=down][data-id=learn]');await pg.waitForTimeout(150);
+   const aStored=(await lay()).stored;const ids=await pg.evaluate(()=>{const b=Profiles.create('Bea');return [Profiles.activeId,b.id]});
+   await pg.evaluate(id=>Profiles.switchTo(id),ids[1]);await pg.waitForTimeout(500);s=await lay();
+   ok(s.stored===null&&sameArr(s.side,DEF)&&sameArr(s.bar,DBAR),'arrange: a new profile starts with the default layout');
+   await openSettings();await pg.click('[data-act=down][data-id=review]');await pg.click('.arr-row[data-id=exam] [role=switch]');await pg.click('.arr-row[data-id=history] [role=switch]');await pg.waitForTimeout(200);
+   const bStored=(await lay()).stored;
+   await pg.evaluate(id=>Profiles.switchTo(id),ids[0]);await pg.waitForTimeout(500);s=await lay();
+   ok(bStored&&aStored&&bStored!==aStored&&s.stored===aStored&&JSON.parse(aStored).order[1]==='practice'&&JSON.parse(bStored).order[3]==='vocab','arrange: profile A and profile B keep different layouts; switching profile redraws the menus from that profile\'s layout');
+   // 6. drives sidebar, rail, drawer and bar at every width
+   await pg.evaluate(id=>Profiles.switchTo(id),ids[1]);await pg.waitForTimeout(500);
+   const bl=JSON.parse(bStored);
+   for(const w of [390,1100,1440]){await pg.setViewportSize({width:w,height:900});await pg.waitForTimeout(400);s=await lay();
+     const exp=w<1000?bl.order.filter(x=>bl.bar.indexOf(x)<0):bl.order;
+     const barVis=await pg.$eval('#tabBar',e=>getComputedStyle(e).display!=='none');
+     ok(sameArr(s.side,bl.order)&&sameArr(s.rail,bl.order)&&sameArr(s.bar,bl.bar)&&sameArr(s.drawer,exp)&&(w<1000)===barVis,'arrange '+w+'px: one setting drives the side menu, rail, '+(w<1000?'drawer (non-bar pages)':'full list')+' and the 4-item bar');}
+   await pg.setViewportSize({width:390,height:844});await pg.waitForTimeout(300);
+   ok(await pg.$$eval('#tabBar a',a=>a.length===4&&a.every(x=>x.getClientRects().length&&x.textContent.trim().length>0&&x.querySelector('svg use').getAttribute('href').indexOf('#i-')===0)),'arrange: the bar always shows exactly four links, each with an icon and a short name');
+   // current page mark follows the rebuilt bar
+   await pg.evaluate(()=>{location.hash='#/dashboard'});await pg.waitForTimeout(300);
+   ok((await lay()).cur==='dashboard'&&await pg.evaluate(()=>NavLayout.save({v:1,order:NavLayout.IDS.slice(),bar:['dashboard','learn','plan','exam']}))&&(await lay()).cur==='dashboard','arrange: the current page keeps its aria-current mark after the bar is rebuilt');
+   // 7. a change while the menu is open does not close it
+   await pg.click('#topbar .menu-btn');await pg.waitForTimeout(450);
+   await pg.evaluate(()=>NavLayout.save({v:1,order:NavLayout.IDS.slice(),bar:['dashboard','practice','plan','exam']}));await pg.waitForTimeout(300);
+   ok(await pg.evaluate(()=>document.documentElement.dataset.overlay==='open'&&!document.getElementById('sidebar').inert),'arrange: a layout change (a save, an import landing) while the drawer is open leaves it open');
+   await pg.click('#sidebar [data-profile-panel-open]');await pg.waitForTimeout(450);await pg.click('#profPanel [data-pp-rename]');await pg.fill('#pp-rename-name','Beatrice');await pg.keyboard.press('Enter');await pg.waitForTimeout(500);
+   s=await lay();
+   ok(await pg.evaluate(()=>document.documentElement.dataset.overlay==='open'&&Profiles.active().name==='Beatrice')&&sameArr(s.drawer,DEF.filter(x=>DBAR.indexOf(x)<0)),'arrange: renaming inside the open drawer keeps it open and the drawer list still follows the layout');
+   await pg.keyboard.press('Escape');await pg.keyboard.press('Escape');await pg.waitForTimeout(450);
+   // 8. tampered storage falls back to the default, with no error (page errors are checked by step())
+   const tamper=[['unknown id',JSON.stringify({v:1,order:DEF.slice(0,10).concat(['bogus']),bar:DBAR})],
+     ['duplicate id',JSON.stringify({v:1,order:DEF.slice(0,10).concat(['learn']),bar:DBAR})],
+     ['Home not first',JSON.stringify({v:1,order:['learn','dashboard'].concat(DEF.slice(2)),bar:DBAR})],
+     ['no Home in bar',JSON.stringify({v:1,order:DEF,bar:['learn','practice','plan','exam']})],
+     ['5 bar items',JSON.stringify({v:1,order:DEF,bar:['dashboard','practice','plan','exam','learn']})],
+     ['3 bar items',JSON.stringify({v:1,order:DEF,bar:['dashboard','practice','exam']})],
+     ['bar out of list order',JSON.stringify({v:1,order:DEF,bar:['exam','dashboard','practice','plan']})],
+     ['duplicate in bar',JSON.stringify({v:1,order:DEF,bar:['dashboard','practice','practice','exam']})],
+     ['order not an array',JSON.stringify({v:1,order:'dashboard',bar:DBAR})],
+     ['bar not an array',JSON.stringify({v:1,order:DEF,bar:{0:'dashboard'}})],
+     ['wrong version',JSON.stringify({v:2,order:DEF,bar:DBAR})],
+     ['string version',JSON.stringify({v:'1',order:DEF,bar:DBAR})],
+     ['extra field',JSON.stringify({v:1,order:DEF,bar:DBAR,x:1})],
+     ['markup id',JSON.stringify({v:1,order:DEF.slice(0,10).concat(['<img src=x onerror=window.__xss=1>']),bar:DBAR})],
+     ['__proto__ key',  '{"v":1,"order":'+JSON.stringify(DEF)+',"bar":'+JSON.stringify(DBAR)+',"__proto__":{"x":1}}'],
+     ['an array',JSON.stringify([1,2,3])],['null','null'],['a number','7'],['a string','"dashboard"'],['not JSON','{oops'],['empty',''],
+     ['huge string','x'.repeat(200000)],['huge valid-looking JSON','{"v":1,"order":'+JSON.stringify(DEF)+',"bar":'+JSON.stringify(DBAR)+',"pad":"'+'y'.repeat(100000)+'"}'],
+     ['huge arrays',JSON.stringify({v:1,order:new Array(5000).fill('learn'),bar:DBAR})]];
+   const bad=[];
+   for(const [name,val] of tamper){
+     const r=await pg.evaluate(async v=>{localStorage.setItem(Profiles.key('celpip_navlayout_v1'),v);NavLayout.refresh();
+       const g=NavLayout.get(),d=NavLayout.defaultLayout();return {same:JSON.stringify(g)===JSON.stringify(d),stored:NavLayout.stored(),side:[...document.querySelectorAll('#mainNav>a')].map(a=>a.dataset.section).join(),bar:[...document.querySelectorAll('#tabBar>a')].map(a=>a.dataset.section).join(),exp:Storage.exportAll().navLayout}},val);
+     if(!(r.same&&r.stored===null&&r.side===DEF.join()&&r.bar===DBAR.join()&&r.exp===null))bad.push(name)}
+   ok(bad.length===0,'arrange: '+tamper.length+' tampered stored values (unknown id, duplicate, no Home first, no Home in bar, 5 or 3 bar items, wrong order, non-array, wrong or string version, extra field, markup id, __proto__, array, null, number, string, not JSON, empty, huge string, huge JSON, huge arrays) all fall back to the default, are left out of an export, and the page shows the default'+(bad.length?' FAILED: '+bad.join(', '):''));
+   await openSettings();
+   ok((await rowIds()).join()===DEF.join()&&/4 of 4 chosen/.test(await status())&&await pg.evaluate(()=>(window.__xss||0)===0&&!document.querySelector('#app img')),'arrange: Settings draws the default after tampering, and no markup ran or appeared');
+   await pg.evaluate(()=>localStorage.removeItem(Profiles.key('celpip_navlayout_v1')));
+   // 9. export -> import and QR round trip
+   const mine={v:1,order:['dashboard','learn','review','practice','vocab','grammar','notes','exam','plan','history','settings'],bar:['dashboard','practice','exam','plan'].sort((a,b)=>['dashboard','learn','review','practice','vocab','grammar','notes','exam','plan'].indexOf(a)-['dashboard','learn','review','practice','vocab','grammar','notes','exam','plan'].indexOf(b))};
+   const rt=await pg.evaluate(async mine=>{
+     NavLayout.save(mine);const exp=JSON.parse(JSON.stringify(Storage.exportAll()));
+     const ch=await Transfer.makeChunks(Storage.exportAll());const rx=Transfer.Receiver();let r;for(const t of ch.sort(()=>Math.random()-.5))r=await rx.add(t);
+     const key=id=>'celpip_p_'+id+'_navlayout_v1';
+     const pf=Storage.addAsProfile(JSON.parse(JSON.stringify(exp)));const pq=Storage.addAsProfile(r.data);
+     const cur=Profiles.activeId;NavLayout.reset();const a0=NavLayout.stored();
+     const imp=Storage.importAll(JSON.parse(JSON.stringify(exp)));const a1=NavLayout.stored();
+     NavLayout.reset();const rep=Storage.replaceActive(JSON.parse(JSON.stringify(exp)));const a2=NavLayout.stored();
+     return {expLay:exp.navLayout,state:r.state,file:localStorage.getItem(key(pf.id)),qr:localStorage.getItem(key(pq.id)),a0,imp,a1,rep,a2,sideNow:[...document.querySelectorAll('#mainNav>a')].map(a=>a.dataset.section).join()}},mine);
+   ok(JSON.stringify(rt.expLay)===JSON.stringify(mine),'arrange: the export (backup file) carries the layout');
+   ok(rt.file===JSON.stringify(mine)&&rt.state==='done'&&rt.qr===JSON.stringify(mine),'arrange: file import (add as new profile) and the QR transfer (pieces in shuffled order) both give the new profile the same layout');
+   ok(rt.a0===null&&rt.imp&&JSON.stringify(rt.a1)===JSON.stringify(mine)&&rt.rep&&JSON.stringify(rt.a2)===JSON.stringify(mine)&&rt.sideNow===mine.order.join(),'arrange: "Import into this profile" and "Replace this profile" restore the layout and the menus show it at once');
+   // 10. tampered imports (file and QR) are dropped, never trusted
+   const ti=await pg.evaluate(async mine=>{
+     const DEFa=NavLayout.IDS.slice();const hist=[{id:'a_1730000000001_aaa111',type:'practice',skill:'reading',pct:60,clb:6,date:'2026-11-01T10:00:00.000Z'}];
+     const evil=[{v:1,order:DEFa.slice(0,10).concat(['bogus']),bar:['dashboard','practice','plan','exam']},{v:1,order:DEFa,bar:['dashboard','practice','plan','exam','learn']},{v:1,order:['learn','dashboard'].concat(DEFa.slice(2)),bar:['dashboard','practice','plan','exam']},
+       {v:1,order:DEFa,bar:['learn','practice','plan','exam']},'x'.repeat(100000),[1,2],7,{v:1,order:DEFa,bar:['dashboard','practice','plan','exam'],extra:'<img src=x onerror=window.__xss=1>'},JSON.parse('{"v":1,"order":'+JSON.stringify(DEFa)+',"bar":["dashboard","practice","plan","exam"],"__proto__":{"p":1}}')];
+     const out={cleaned:0,imported:0,alone:null,qr:0,total:evil.length};
+     NavLayout.save(mine);const before=localStorage.getItem(Profiles.key('celpip_navlayout_v1'));
+     for(const e of evil){const cb=Storage.cleanBundle({history:hist,navLayout:e});if(cb&&cb.navLayout===undefined)out.cleaned++;
+       Storage.importAll({history:hist,navLayout:e});if(localStorage.getItem(Profiles.key('celpip_navlayout_v1'))===before)out.imported++;
+       const ch=await Transfer.makeChunks({history:hist,navLayout:e});const rx=Transfer.Receiver();let r;for(const t of ch)r=await rx.add(t);
+       const p=Storage.addAsProfile(r.data);if(p&&localStorage.getItem('celpip_p_'+p.id+'_navlayout_v1')===null)out.qr++;if(p)Profiles.remove(p.id);}
+     out.alone=Storage.cleanBundle({navLayout:mine});
+     const rr=Storage.replaceActive({history:hist,navLayout:evil[0]});out.afterReplace=localStorage.getItem(Profiles.key('celpip_navlayout_v1'));out.rr=rr;out.proto=({}).p===undefined;out.xss=window.__xss||0;
+     return out}, mine);
+   ok(ti.cleaned===ti.total&&ti.imported===ti.total&&ti.qr===ti.total,'arrange: '+ti.total+' tampered layouts in a backup or a QR transfer are dropped by the cleaner, leave the current layout alone on import, and add nothing to a new profile ('+ti.cleaned+'/'+ti.imported+'/'+ti.qr+')');
+   ok(ti.alone===null&&ti.rr===true&&ti.afterReplace===null&&ti.proto&&ti.xss===0,'arrange: a layout alone is not a backup; Replace with a bad layout ends on the default; no prototype pollution, no script ran');
+   // 10b. review fixes (M1, L1, L2, I1, I2)
+   await openSettings();
+   await pg.evaluate(()=>{NavLayout.reset()});await openSettings();
+   // M1: an import while Settings is open updates the card, and one click does not undo the import
+   const imp=['dashboard','learn','practice','review','vocab','grammar','notes','plan','exam','history','settings'];
+   await pg.evaluate(()=>{const o=NavLayout.IDS.slice();const o2=['dashboard','settings','history',...o.slice(1,9)];const bar=o2.filter(x=>['dashboard','settings','history','exam'].includes(x));window.__imp={v:1,order:o2,bar};Storage.importAll({history:[],navLayout:window.__imp})});
+   await pg.waitForTimeout(200);
+   const afterImp=await rowIds();const impOrder=await pg.evaluate(()=>window.__imp.order);
+   ok(sameArr(afterImp,impOrder),'arrange (M1): an import while Settings is open redraws the open card with the imported order');
+   await pg.click('[data-act="down"][data-id="settings"]');await pg.waitForTimeout(200);
+   const afterClick=await pg.evaluate(()=>JSON.parse(localStorage.getItem(Profiles.key('celpip_navlayout_v1'))));
+   const wantImp=await pg.evaluate(()=>{const o=window.__imp.order.slice();const i=o.indexOf('settings');o.splice(i,1);o.splice(i+1,0,'settings');return o});
+   ok(sameArr(afterClick.order,wantImp),'arrange (M1): one click after the import changes only that move (the import is not undone)');
+   // M1: a change written by a second tab updates the open card
+   const pg2=await c.newPage();await pg2.goto(BASE);await pg2.waitForTimeout(500);
+   await pg2.evaluate(()=>{NavLayout.save({v:1,order:NavLayout.IDS.slice(),bar:['dashboard','learn','plan','exam']})});
+   await pg.waitForTimeout(400);
+   const t2=await pg.evaluate(()=>({sw:[...document.querySelectorAll('.arr-sw[aria-checked=true]')].map(b=>b.dataset.id),rows:[...document.querySelectorAll('.arr-row')].map(r=>r.dataset.id)}));
+   ok(sameArr(t2.rows,DEF)&&sameArr(t2.sw,['dashboard','learn','plan','exam']),'arrange (M1): a layout saved by a second tab updates the open card');
+   // L2: another tab clearing all storage falls back to the default and repaints
+   await pg2.evaluate(()=>localStorage.clear());await pg.waitForTimeout(400);
+   const t3=await lay();
+   ok(sameArr(t3.side,DEF)&&sameArr(t3.bar,DBAR)&&sameArr(await rowIds(),DEF)&&!/Saved for/.test(await status()),'arrange (L2): another tab clearing storage gives the default menus and card, and the card does not claim "Saved"');
+   await pg2.close();
+   // L1: Storage.get/set cannot bypass the check
+   const l1=await pg.evaluate(()=>{const k=Profiles.key('celpip_navlayout_v1');const bad={v:1,order:['x'],bar:['y']};const r=Storage.set('navLayout',bad);const stored1=localStorage.getItem(k);
+     localStorage.setItem(k,'{"v":1,"order":["x"],"bar":["y"]}');const g=Storage.get('navLayout',null);localStorage.removeItem(k);
+     const good=Storage.set('navLayout',{v:1,order:NavLayout.IDS.slice(),bar:['dashboard','learn','plan','exam']});const g2=Storage.get('navLayout',null);NavLayout.reset();return {r,stored1,g,good,g2ok:!!g2&&g2.bar.length===4}});
+   ok(l1.r===false&&l1.stored1===null&&l1.g===null&&l1.good===true&&l1.g2ok,'arrange (L1): Storage.set/get of the layout go through the check (a bad value is refused and never read back)');
+   // I1: Reset says the default is in use, not "Saved"
+   await openSettings();await pg.click('[data-act="down"][data-id="learn"]');await pg.waitForTimeout(150);
+   await pg.click('[data-act=reset]');await pg.waitForTimeout(200);
+   const rs=await status(),rl=await live();
+   ok(!/Saved/.test(rs)&&/default/.test(rs)&&!/Saved/.test(rl||'')&&(await lay()).stored===null,'arrange (I1): after Reset the status and the announcement do not say "Saved" (nothing is stored) ("'+rs+'")');
+   // I2: a failed save shows in the visible status line too
+   await pg.evaluate(()=>{const o=Object.getPrototypeOf(localStorage);window.__orig=o.setItem;o.setItem=function(){throw new Error('quota')}});
+   await pg.click('[data-act="down"][data-id="learn"]');await pg.waitForTimeout(200);
+   const fs=await status(),fl=await live();
+   await pg.evaluate(()=>{Object.getPrototypeOf(localStorage).setItem=window.__orig});
+   ok(/Could not save/.test(fs)&&/Could not save/.test(fl||''),'arrange (I2): a refused save shows in the visible status line as well as the announcement ("'+fs+'")');
+   await pg.evaluate(()=>NavLayout.reset());await openSettings();
+   // 11. deleting a profile clears its layout
+   const dl=await pg.evaluate(()=>{const p=Profiles.list().find(x=>x.id===Profiles.activeId);NavLayout.save({v:1,order:NavLayout.IDS.slice(),bar:['dashboard','learn','plan','exam']});const k='celpip_p_'+p.id+'_navlayout_v1';const had=localStorage.getItem(k)!==null;Profiles.remove(p.id);return {had,gone:localStorage.getItem(k)===null}});
+   ok(dl.had&&dl.gone,'arrange: deleting a profile removes its layout note with the rest of its data');
+   // 12. rows fit (no overlap) at 390 and 320; screenshots
+   await pg.evaluate(()=>{const p=Profiles.list()[0];Profiles.rename(p.id,'Ada');localStorage.removeItem(Profiles.key('celpip_navlayout_v1'))});
+   for(const w of [1440,390,320]){
+     await pg.setViewportSize({width:w,height:w===1440?1000:844});await openSettings();
+     const f=await pg.evaluate(()=>{const R=e=>e.getBoundingClientRect(),hit=(a,b)=>!(a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top);
+       let overlap=0,wrap=0,small=0;document.querySelectorAll('.arr-row').forEach(r=>{const sw=R(r.querySelector('.arr-sw')),nm=R(r.querySelector('.arr-nm')),mv=[...r.querySelectorAll('.arr-mv')].map(R);
+         if(hit(sw,nm)||mv.some(m=>hit(sw,m)||hit(nm,m))||hit(mv[0],mv[1]))overlap++;const wd=r.querySelector('.arr-word');if(wd.scrollWidth>wd.clientWidth||wd.getClientRects().length>1&&R(wd).height>26)wrap++;
+         [...r.querySelectorAll('button')].forEach(b=>{const q=R(b);if(q.height<43.5||q.width<43.5)small++});if(R(r).right>innerWidth+0.5)overlap++});
+       return {overlap,wrap,small,scrollX:document.documentElement.scrollWidth>innerWidth+1,rows:document.querySelectorAll('.arr-row').length,home:document.querySelector('.arr-row[data-id=dashboard] .arr-word').textContent.trim(),homeH:R(document.querySelector('.arr-row[data-id=dashboard] .arr-word')).height}});
+     ok(f.rows===11&&f.overlap===0&&f.wrap===0&&f.small===0&&!f.scrollX&&f.home==='Always in bar'&&f.homeH<30,'arrange '+w+'px: no row overlaps, "Always in bar" is on one line, every control is 44px or more, no sideways scroll ('+JSON.stringify(f)+')');
+     if(SHOTS)for(const th of ['light','dark']){await pg.evaluate(t=>{Shell.setTheme(t)},th);await pg.evaluate(()=>{const e=document.getElementById('arrangeCard');window.scrollTo(0,e.getBoundingClientRect().top+scrollY-(innerWidth>=1000?110:80))});await pg.waitForTimeout(300);await pg.screenshot({path:sp('b2a-arrange-'+w+'-'+th+'.png')})}
+     await pg.evaluate(()=>Shell.setTheme('light'));
+   }
+   await c.close()});
+
+
+ // ---------- T-033 B2b: the circle wipe page change (js/pagewipe.js) ----------
+ await step('T-033 B2b circle wipe: menu only, not bottom bar, not focus mode, Settings switch, junk value, reduced motion, focus, screenshots',async()=>{
+   // count the disc's animations (grow = 1, shrink = 2) and every console error; no 100x timer here: the real 240 + 280 ms are measured
+   const count=()=>{window.__wipes=0;const o=Element.prototype.animate;Element.prototype.animate=function(){if(this.id==='pagewipe')window.__wipes++;return o.apply(this,arguments)}};
+   const mk=async(vp,extra)=>{const r=await fresh(Object.assign({viewport:vp,reducedMotion:'no-preference'},extra||{}),count);return r};
+   const wipes=pg=>pg.evaluate(()=>window.__wipes);
+   const st=pg=>pg.evaluate(()=>({hash:location.hash,h1:(document.querySelector('#app h1')||{}).textContent,focusIsH1:document.activeElement&&document.activeElement.tagName==='H1'&&document.getElementById('app').contains(document.activeElement),hidden:document.getElementById('pagewipe').hidden,cur:(document.querySelector('#mainNav [aria-current=page]')||{dataset:{}}).dataset.section}));
+   const t0=Date.now();
+   // 1. wide screen: a sidebar row plays the wipe, ends on the new page, focus on the heading, disc gone
+   let {c,pg}=await mk({width:1440,height:900});
+   ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wipe').trim().toUpperCase())==='#0B6477','wipe token (light) is #0B6477');
+   await pg.click('#mainNav a[data-section="learn"]');await pg.waitForTimeout(1000);
+   let r=await st(pg);
+   ok(await wipes(pg)===2&&r.hash==='#/learn'&&/Learn/i.test(r.h1||'')&&r.hidden,'wipe 1440: sidebar row plays grow + shrink, ends on #/learn, disc hidden again ('+r.hash+', '+await wipes(pg)+' animations)');
+   ok(r.focusIsH1,'wipe 1440: focus lands on the new page heading');
+   // timing: both phases together are about 520 ms
+   await pg.evaluate(()=>{window.__t=[];const o=Element.prototype.animate;Element.prototype.animate=function(){const a=o.apply(this,arguments);if(this.id==='pagewipe'){const t=performance.now();a.finished.then(()=>window.__t.push(Math.round(performance.now()-t)),()=>{})}return a}});
+   await pg.click('#mainNav a[data-section="notes"]');await pg.waitForTimeout(1000);
+   const tm=await pg.evaluate(()=>window.__t);
+   ok(tm.length===2&&tm[0]>=200&&tm[0]<=330&&tm[1]>=240&&tm[1]<=380,'wipe: grow about 240 ms and shrink about 280 ms (measured '+tm.join(' and ')+' ms)');
+   // a second press while it runs is ignored
+   const before=await wipes(pg);
+   await pg.evaluate(()=>{document.querySelector('#mainNav a[data-section="history"]').click();document.querySelector('#mainNav a[data-section="settings"]').click()});
+   await pg.waitForTimeout(1000);r=await st(pg);
+   ok(r.hash==='#/history'&&await wipes(pg)-before===2,'wipe: a second press while the disc runs is ignored (ended on '+r.hash+')');
+   // rail icon (1100 px wide: rail, not pinned)
+   await pg.setViewportSize({width:1100,height:900});await pg.waitForTimeout(300);
+   const b4=await wipes(pg);await pg.click('#rail .rail-list a[data-section="vocab"]');await pg.waitForTimeout(1000);
+   r=await st(pg);ok(r.hash==='#/vocab'&&await wipes(pg)-b4===2,'wipe 1100: rail icon plays the wipe');
+   // junk and tampered values
+   let jn=0;for(const v of ['banana','OFF','','0','false','<img src=x onerror=1>','x'.repeat(5000)]){jn++;
+     await pg.evaluate(v=>localStorage.setItem('celpip_pagewipe',v),v);await pg.reload();await pg.waitForTimeout(500);
+     const on=await pg.evaluate(()=>PageWipe.isOn());const b=await wipes(pg);
+     await pg.setViewportSize({width:1440,height:900});await pg.click('#mainNav a[data-section="'+(jn%2?'grammar':'learn')+'"]');await pg.waitForTimeout(950);
+     if(!(on&&await wipes(pg)-b===2))ok(false,'wipe: junk value "'+v.slice(0,20)+'" is treated as on');
+   }
+   ok(true,'wipe: 7 junk values in celpip_pagewipe (banana, OFF, empty, 0, false, markup, 5000 characters) all count as on and play the wipe without error');
+   // Settings switch
+   await pg.evaluate(()=>{localStorage.removeItem('celpip_pagewipe');location.hash='#/settings'});await pg.waitForTimeout(500);
+   ok(await pg.$eval('#pagewipeToggle',e=>e.checked),'wipe: Settings switch "Page transition" is on by default');
+   await pg.click('label.check-row:has(#pagewipeToggle)');await pg.waitForTimeout(150);
+   ok(await pg.evaluate(()=>localStorage.getItem('celpip_pagewipe'))==='off','wipe: switching off stores exactly "off"');
+   const b5=await wipes(pg);await pg.evaluate(()=>window.scrollTo(0,0));await pg.waitForTimeout(500);await pg.click('#mainNav a[data-section="learn"]');await pg.waitForTimeout(900);
+   r=await st(pg);ok(r.hash==='#/learn'&&await wipes(pg)===b5,'wipe: switch off, no disc animation, page still changes');
+   await pg.reload();await pg.waitForTimeout(500);await pg.evaluate(()=>{location.hash='#/settings'});await pg.waitForTimeout(400);
+   ok(!await pg.$eval('#pagewipeToggle',e=>e.checked),'wipe: the off choice survives a reload');
+   await pg.click('label.check-row:has(#pagewipeToggle)');await pg.waitForTimeout(150);
+   ok(await pg.evaluate(()=>localStorage.getItem('celpip_pagewipe'))==='on','wipe: switching on stores exactly "on"');
+   // focus mode: no wipe (practice)
+   await pg.evaluate(()=>{location.hash='#/practice/listening'});await pg.waitForTimeout(400);await pg.click('#quickBtn');await pg.waitForTimeout(400);
+   const b6=await wipes(pg);
+   const fm=await pg.evaluate(()=>Shell.focusMode.active);
+   await pg.evaluate(()=>document.querySelector('#mainNav a[data-section="learn"]').click());await pg.waitForTimeout(900);
+   ok(fm&&await wipes(pg)===b6&&(await st(pg)).hash==='#/learn','wipe: during practice (focus mode) a menu link does not wipe');
+   // flake check: six quick route changes in a row, no uncaught "Transition was skipped"
+   const e0=errs.length;
+   await pg.evaluate(()=>{['#/plan','#/exam','#/practice','#/plan','#/history','#/dashboard'].forEach(h=>{location.hash=h})});await pg.waitForTimeout(900);
+   ok(errs.length===e0,'view transitions: six quick route changes cause no uncaught error (the "Transition was skipped" flake)'+(errs.length>e0?': '+errs.slice(e0).join(' | '):''));
+   await c.close();
+   // 2. phone: drawer row wipes, bottom bar does not
+   ({c,pg}=await mk({width:390,height:844}));
+   await pg.click('.topbar .menu-btn');await pg.waitForTimeout(600);
+   await pg.click('#mainNav a[data-section="learn"]');await pg.waitForTimeout(1100);
+   r=await st(pg);ok(r.hash==='#/learn'&&await wipes(pg)===2&&r.hidden&&r.focusIsH1,'wipe 390: drawer row plays the wipe, ends on #/learn, focus on the heading');
+   const b7=await wipes(pg);await pg.click('#tabBar a[data-section="practice"]');await pg.waitForTimeout(900);
+   r=await st(pg);ok(r.hash==='#/practice'&&await wipes(pg)===b7,'wipe 390: bottom bar does not wipe (quick fade only), page still changes');
+   await pg.evaluate(()=>{location.hash='#/dashboard'});await pg.waitForTimeout(400);
+   // overlay opened by the anchor / hamburger at 1440 is covered in the 1440 run; mid-wipe screenshot at 390 (dark)
+   if(SHOTS){await pg.evaluate(()=>Shell.setTheme('dark'));await pg.waitForTimeout(300);
+     ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wipe').trim().toUpperCase())==='#0B3A45','wipe token (dark) is #0B3A45');
+     await pg.click('.topbar .menu-btn');await pg.waitForTimeout(600);
+     await pg.evaluate(()=>document.querySelector('#mainNav a[data-section="learn"]').click());
+     await pg.waitForFunction(()=>document.getElementById('pagewipe').getAnimations().length>0);
+     await pg.evaluate(()=>{const a=document.getElementById('pagewipe').getAnimations()[0];a.pause();a.currentTime=85});
+     await pg.screenshot({path:sp('b2b-wipe-390.png')});}
+   await c.close();
+   // 3. reduced motion: no wipe, page changes, no error
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'reduce'},count));
+   await pg.click('#mainNav a[data-section="learn"]');await pg.waitForTimeout(600);
+   r=await st(pg);ok(r.hash==='#/learn'&&await wipes(pg)===0&&r.hidden,'wipe: reduced motion, no wipe and the page still changes');
+   await c.close();
+   // 4. mid-wipe screenshot at 1440 (light)
+   if(SHOTS){({c,pg}=await mk({width:1440,height:900}));
+     await pg.click('#mainNav a[data-section="learn"]',{trial:true});
+     await pg.evaluate(()=>document.querySelector('#mainNav a[data-section="practice"]').click());
+     await pg.waitForFunction(()=>document.getElementById('pagewipe').getAnimations().length>0);
+     await pg.evaluate(()=>{const a=document.getElementById('pagewipe').getAnimations()[0];a.pause();a.currentTime=85});
+     await pg.screenshot({path:sp('b2b-wipe-1440.png')});await c.close();}
+   ok(true,'wipe: step took '+(Date.now()-t0)+' ms');
+ });
 
  console.log(`\n${fails} failure(s)`);await b.close();process.exit(fails?1:0)})();

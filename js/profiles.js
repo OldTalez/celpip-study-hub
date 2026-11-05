@@ -24,7 +24,8 @@ const Profiles = (function () {
   const ID_RE = /^[a-z0-9]{4,12}$/;
   // The per-learner notes (old fixed labels). Anything NOT in this list stays device-wide.
   const LEGACY = ["celpip_history_v1", "celpip_settings_v1", "celpip_mistakes_v1", "celpip_partstats_v1", "celpip_vocab_v1",
-    "celpip_grammar_v1", "celpip_log_v1", "celpip_studytime_v1", "celpip_persist_v1", "celpip_backup_v1", "celpip_checkin_v1", "celpip_drafts_v1"];
+    "celpip_grammar_v1", "celpip_log_v1", "celpip_studytime_v1", "celpip_persist_v1", "celpip_backup_v1", "celpip_checkin_v1", "celpip_drafts_v1",
+    "celpip_navlayout_v1"];   // the Arrange menu layout (T-033 B2a): listing it here makes delete and reset clear it and a failed import restore it
   const listeners = [];
   let state = null;   // { list: [{id, name, createdAt}], active: id, ask: boolean, legacyDone: boolean }
 

@@ -5,6 +5,7 @@
 // The formula converts each colour to its relative luminance (how bright it really looks to the eye) and compares the two.
 // Run with:  node tools/check-contrast.js   It reads the colour variables from css/style.css, so it stays in step with the design.
 // Turn B (2026-11-05) added four pairs for the question dots, notes, bars and toast.
+// Updated 2026-11-05 (T-033 turn A): white/black tokens and the extra spec pairs.
 // Updated 2026-11-05 (T-029 turn A) for the "A Lakeline" tokens: --accent is now the accent as text/graphic and --accent-fill the fill.
 const fs = require("fs");
 const path = require("path");
@@ -43,7 +44,14 @@ const pairs = [
   ["accent", "mark", 3],        // the dotted underline and note icon on a highlighted note
   ["good", "surface-2", 3],     // the target-range band edges and the "in range" fill on the bar track
   ["bad", "surface", 4.5],      // the "Over by" icon beside the word-count bar (also listed above, kept for the bar)
-  ["text", "bg", 4.5]           // the toast text is --bg on --text; the reverse pair is the same ratio
+  ["text", "bg", 4.5],          // the toast text is --bg on --text; the reverse pair is the same ratio
+  // Added in T-033 turn A (design spec section 2, including the Revision 2 rows) for the white/black themes, rail tooltip and island:
+  ["tip-ink", "tip-bg", 4.5],   // rail tooltip text
+  ["bg", "text", 3],            // arrow chip on the current-page row (decorative, held to 3)
+  ["muted", "surface-2", 3],    // resting arrow chip
+  ["text", "surface", 3],       // icons in the collapsed island
+  ["accent-fill", "bg", 3],     // switch track against the page
+  ["text", "mark", 4.5], ["accent", "mark", 3]   // highlighter mark (re-measured against the new surfaces)
 ];
 let fails = 0;
 [["light", light], ["dark", dark]].forEach(([name, t]) => {

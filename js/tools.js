@@ -400,7 +400,7 @@ const PassageTools = (() => {
     function place(el, anchor) {
       el.style.visibility = "hidden"; el.hidden = false;
       const w = el.offsetWidth, hgt = el.offsetHeight, m = 8;
-      const barH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar-h")) || 60;
+      const barH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--stack-h")) || 60;
       const minTop = barH + m, maxTop = window.innerHeight - hgt - m;
       const touch = window.matchMedia("(pointer: coarse)").matches;  // on touch screens go below, so the system menu is not covered
       const above = anchor.top - hgt - m, below = anchor.bottom + m;
