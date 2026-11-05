@@ -550,7 +550,10 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await p.evaluate(()=>{Storage.clearHistory();localStorage.removeItem('celpip_partstats_v1')});
    await go('#/dashboard');
    ok(await p.$$eval('.tile-pace #paceNum',e=>e.length)===0&&/No timing yet/.test(await txt('.tile-pace')||''),'pace: empty state before any timed attempt');
-   ok(/No results yet/.test(await txt('.tile-radar')||'')&&await p.$$eval('svg.radar',e=>e.length)===0,'radar: empty state, no invented values');
+   {const e=await p.evaluate(()=>{const s=document.querySelector('svg.radar');return s?{none:[...s.querySelectorAll('.rd-none')].map(x=>x.textContent).join(),nums:s.querySelectorAll('.rd-num').length,tg:!!s.querySelector('.rd-target'),aria:s.getAttribute('aria-label')}:null});
+   ok(/No results yet/.test(await txt('.tile-radar')||'')&&!!e&&e.none==='no score,no score,no score,no score'&&e.nums===0&&e.tg&&/No scores yet/.test(e.aria)&&/Target/.test(e.aria),'radar: empty state draws the chart with 4 "no score" labels, target outline, no invented values');
+   await p.click('#radarStart');await p.waitForTimeout(300);
+   ok(/#\/practice/.test(p.url()),'radar: empty-state button opens Practice');await go('#/dashboard');}
    await p.evaluate(()=>{
      const t=(a)=>({totalSec:a.reduce((x,y)=>x+y,0),perQuestionSec:a,perPassageSec:[a.reduce((x,y)=>x+y,0)]});
      Storage.saveAttempt({type:'practice',skill:'reading',mode:'mcq',correct:6,total:8,pct:75,clb:8,timing:t([60,70,65,60,75,70,60,60])});
@@ -628,7 +631,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(st.h.length===1&&st.h[0].clb===null,'import: a missing level stays null, not 0');
    for(const r of ['#/dashboard','#/review','#/vocab','#/grammar','#/notes','#/history','#/plan','#/settings'])await go(r);
    await go('#/dashboard');
-   ok(/No results yet|no score/.test(await txt('.tile-radar')||'')&&!!(await p.$('.bento')),'import: the dashboard still renders and the radar shows no score (not 0) for the missing level');
+   ok(/no score/.test(await txt('.tile-radar')||'')&&!!(await p.$('.bento')),'import: the dashboard still renders and the radar shows no score (not 0) for the missing level');
    ok(!(await p.evaluate(()=>window.__pwn))&&await p.$$eval('img[src="x"]',i=>i.length)===0,'import: no script ran and no element was injected on any screen');
    await p.evaluate(s=>{localStorage.clear();const o=JSON.parse(s);for(const k in o)localStorage.setItem(k,o[k])},snap)});
 

@@ -229,7 +229,9 @@
   }
   function radarTile(history, target) {
     const rows = RADAR_ORDER.map(id => Object.assign({ id, name: SKILL_NAMES[id] }, latestFor(history, id)));
-    if (rows.every(r => r.clb === null)) return `<h2>Skills at a glance</h2><p class="muted">No results yet. Take a practice test to fill this chart.</p>`;
+    // LEARNING NOTE: with no results at all we still draw the empty chart (rings, "no score" labels, dashed target) so the tile
+    // is not a big empty box; only the sentence, the aria-label and the start button change.
+    const empty = rows.every(r => r.clb === null);
     const cx = 180, cy = 146, R = 90;
     const dir = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // unit vector of each arm: up, right, down, left
     const pt = (i, v) => [cx + dir[i][0] * R * v / 12, cy + dir[i][1] * R * v / 12];
@@ -248,16 +250,17 @@
         (r.clb === null ? `<text class="rd-none" x="${x}" y="${y + 20}" text-anchor="${a}">no score</text>` : `<text class="rd-num" x="${x}" y="${y + 22}" text-anchor="${a}">${r.clb}</text>`);
     });
     const say = rows.map(r => r.name + " " + (r.clb === null ? "no score yet, drawn at 0" : r.clb)).join(", ");
-    const aria = `Radar chart of your latest level in each skill out of 12: ${say}. Target ${target} in every skill. The table below the chart gives the same numbers.`;
+    const aria = empty ? `Radar chart of your latest level in each skill out of 12. No scores yet in any skill. Target ${target} in every skill. The table below the chart gives the same rows.` : `Radar chart of your latest level in each skill out of 12: ${say}. Target ${target} in every skill. The table below the chart gives the same numbers.`;
     const scored = rows.filter(r => r.clb !== null).sort((a, b) => a.clb - b.clb);
     const none = rows.filter(r => r.clb === null);
-    const caption = none.length ? `${none.map(r => r.name).join(" and ")} ${none.length > 1 ? "have" : "has"} no score yet; the target is ${target}.`
+    const caption = empty ? "No results yet. Take a practice test to fill this chart." : none.length ? `${none.map(r => r.name).join(" and ")} ${none.length > 1 ? "have" : "has"} no score yet; the target is ${target}.`
       : `${scored[0].name} is the lowest at level ${scored[0].clb}; the target is ${target}.`;
     const trs = rows.map(r => `<tr><th scope="row">${r.name}</th><td>${r.clb === null ? "no score" : r.clb}</td><td>${target}</td><td>${r.clb === null ? "n/a" : (r.clb >= target ? "at or above target" : (target - r.clb) + " to go")}</td><td>${r.date ? fmtDate(r.date) : "n/a"}</td></tr>`).join("");
     return `<h2>Skills at a glance</h2>
       <svg class="radar" viewBox="0 0 360 290" role="img" aria-label="${aria}">${svg}</svg>
       <ul class="radar-key"><li><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--accent)" stroke-width="3"/></svg> Latest level</li><li><svg width="34" height="10" aria-hidden="true"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--text)" stroke-width="2" stroke-dasharray="7 5"/></svg> Target ${target}</li></ul>
       <p class="radar-cap">${caption}</p>
+      ${empty ? '<p><a class="btn btn-sm" id="radarStart" href="#/practice">Start a quick practice</a></p>' : ""}
       <button type="button" class="btn btn-sm btn-quiet" id="radarTableBtn" aria-expanded="false" aria-controls="radarTable">View as table</button>
       <div id="radarTable" hidden><table class="history-table"><caption class="sr-only">Latest level in each skill against your target</caption><thead><tr><th>Skill</th><th>Latest level</th><th>Target</th><th>Gap</th><th>Date</th></tr></thead><tbody>${trs}</tbody></table></div>`;
   }
