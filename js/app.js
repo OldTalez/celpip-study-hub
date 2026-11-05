@@ -1,0 +1,1204 @@
+/* CELPIP Study Guide — client-side SPA. No build step, no backend; all state in localStorage. */
+
+// LEARNING NOTE (for beginners): how this app is organised.
+// It is a "single-page app": index.html is loaded once, and JavaScript swaps what is shown
+// in the main area as you click around. The address bar changes only after the # (for
+// example #/practice), which the "router" below watches: route("name", handler) registers a
+// screen, and render() clears the page and runs the handler for the current address.
+// Screens are built by pasting HTML text into the page with el(`...`). Anything typed by a
+// user is passed through escapeHtml first, so it shows as text and cannot run as code.
+// Reading order: utilities, timer, speech and recording helpers, router, then one section per screen.
+// Small inline SVG icons (drawn with lines, so they follow the text colour and need no image files).
+// LEARNING NOTE: SVG is a text format for drawings. "stroke=currentColor" means "use the colour of the surrounding text",
+// so the same icon works in light and dark themes. aria-hidden hides it from screen readers because the word beside it says the same thing.
+function skillIcon(id) {
+  const p = {
+    listening: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/>',
+    reading: '<path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4z"/><path d="M20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/>',
+    writing: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
+    speaking: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'
+  }[id] || "";
+  return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + p + "</svg>";
+}
+
+const SKILLS = [
+  { id: "listening", name: "Listening", icon: skillIcon("listening"), data: LISTENING_DATA },
+  { id: "reading", name: "Reading", icon: skillIcon("reading"), data: READING_DATA },
+  { id: "writing", name: "Writing", icon: skillIcon("writing"), data: WRITING_DATA },
+  { id: "speaking", name: "Speaking", icon: skillIcon("speaking"), data: SPEAKING_DATA }
+];
+const skillById = id => SKILLS.find(s => s.id === id);
+
+// ---------- Utilities ----------
+// Shuffles a copy of a list: walk from the end, swapping each item with a random earlier one.
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function sample(arr, n) { return shuffle(arr).slice(0, Math.min(n, arr.length)); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmtTime(totalSec) {
+  totalSec = Math.max(0, Math.round(totalSec));
+  const m = Math.floor(totalSec / 60), s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) + " " +
+    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+function wordCount(text) {
+  return (text.trim().match(/\S+/g) || []).length;
+}
+// A "template" element parses HTML text into real page elements without showing them yet.
+function el(html) {
+  const t = document.createElement("template");
+  t.innerHTML = html.trim();
+  return t.content;
+}
+
+// ---------- Simple countdown timer ----------
+// Every live timer registers itself here so navigation can stop it — otherwise a
+// stray setInterval keeps firing after its DOM is torn down and throws on every tick.
+let activeTimers = [];
+function stopAllTimers() { activeTimers.forEach(t => t.stop()); activeTimers = []; }
+
+// Returns a timer object. The inner functions keep access to "remaining" (a closure),
+// and setInterval(tick, 1000) calls tick once per second.
+function Countdown(seconds, onTick, onDone) {
+  let remaining = seconds;
+  let handle = null;
+  function tick() {
+    onTick(remaining);
+    if (remaining <= 0) { stop(); onDone(); return; }
+    remaining -= 1;
+  }
+  function start() { tick(); handle = setInterval(tick, 1000); activeTimers.push(timer); }
+  function stop() { if (handle) clearInterval(handle); handle = null; }
+  const timer = { start, stop, addTime: sec => { remaining += sec; } };
+  return timer;
+}
+
+// Shows a countdown's time in its box and marks the box when time runs low, so a glance is enough:
+// "low" (an orange pill) from the last quarter or last minute, whichever is shorter, and "critical" (red) in the last
+// 10 seconds or last tenth. The CSS reads data-state. For longer timers a screen reader also hears "1:00 left" once,
+// through the hidden "announcer" box in index.html (aria-live means: read out changes to this box).
+function paintTimer(target, remaining, total) {
+  const node = typeof target === "string" ? document.getElementById(target) : target;
+  if (!node) return;
+  node.textContent = fmtTime(remaining);
+  const state = remaining <= Math.min(10, total * 0.1) ? "critical" : remaining <= Math.min(60, total * 0.25) ? "low" : "";
+  if ((node.dataset.state || "") === state) return;
+  node.dataset.state = state;
+  const say = document.getElementById("announcer");
+  if (state && total >= 120 && say) say.textContent = fmtTime(remaining) + " left";
+}
+
+// The ring around the Speaking timer: a circle drawn with pathLength="100", so "how much of the line to hide"
+// (stroke-dashoffset) is simply the percentage of time already used.
+function paintRing(id, remaining, total) {
+  const ring = document.getElementById(id);
+  if (ring) ring.style.strokeDashoffset = String(100 - (100 * remaining) / total);
+}
+function ringTimerHtml(seconds) {
+  return `<div class="ring-wrap">
+    <svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="54"/><circle class="ring-fill" id="ringFill" cx="60" cy="60" r="54" pathLength="100"/></svg>
+    <div class="timer big" id="timerDisplay" role="timer">${fmtTime(seconds)}</div>
+  </div>`;
+}
+
+// Counts how many questions in a form have an answer picked and writes "3 of 6 answered" into node.
+// A question counts once however often you change your mind (a Set keeps each question name only once).
+function watchAnswered(form, node, total, onChange) {
+  const update = () => {
+    const n = new Set([...form.querySelectorAll("input:checked")].map(i => i.name)).size;
+    node.textContent = `${n} of ${total} answered`;
+    node.classList.toggle("all-done", n === total);
+    if (onChange) onChange(n);
+  };
+  form.addEventListener("change", update);
+  update();
+}
+
+// ---------- Speech synthesis (Listening playback) ----------
+// Reads listening passages aloud using the browser's built-in speech synthesis (no audio files needed).
+const Speech = (() => {
+  let utter = null;
+  let supported = "speechSynthesis" in window;
+  function speak(text, { onend, rate = 0.95 } = {}) {
+    if (!supported) { if (onend) setTimeout(onend, 500); return; }
+    window.speechSynthesis.cancel();
+    utter = new SpeechSynthesisUtterance(text);
+    utter.rate = rate;
+    utter.onend = () => onend && onend();
+    utter.onerror = () => onend && onend();
+    window.speechSynthesis.speak(utter);
+  }
+  function stop() { if (supported) window.speechSynthesis.cancel(); }
+  return { speak, stop, get supported() { return supported; } };
+})();
+
+// ---------- Microphone recording (Speaking practice) ----------
+// Records your microphone through the browser (it asks permission first). The audio stays on this computer.
+const Recorder = (() => {
+  let mediaRecorder = null, chunks = [], stream = null;
+  async function start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no-media-devices");
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.start();
+  }
+  function stop() {
+    return new Promise(resolve => {
+      if (!mediaRecorder) return resolve(null);
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        stream.getTracks().forEach(t => t.stop());
+        resolve(URL.createObjectURL(blob));
+      };
+      mediaRecorder.stop();
+    });
+  }
+  // Leaving the page mid-recording: stop and let go of the microphone (its light goes off), keep nothing.
+  function cancel() {
+    MicMeter.stop();
+    try { if (mediaRecorder && mediaRecorder.state !== "inactive") { mediaRecorder.onstop = null; mediaRecorder.stop(); } } catch (e) {}
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    mediaRecorder = null; stream = null; chunks = [];
+  }
+  return { start, stop, cancel, get stream() { return stream; } };
+})();
+
+// ---------- Live microphone level (Speaking practice) ----------
+// Shows that the microphone is really hearing you: a row of bars that rise and fall with your voice.
+// LEARNING NOTE: the Web Audio API lets a page look at sound as numbers. An "analyser" gives the current wave as a
+// list of values around 128 (silence); how far they swing from 128 is the loudness (we take the RMS, a kind of average).
+// Everything happens inside the browser; no sound leaves the device. requestAnimationFrame runs a function just before
+// each screen repaint; we only update every 70 ms so the bars move at a calm pace.
+const MicMeter = (() => {
+  let ctx = null, raf = 0;
+  function start(stream, node) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || !stream || !node) return;
+    stop();
+    let analyser;
+    try {
+      ctx = new AC();
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    } catch (e) { stop(); return; }
+    const buf = new Uint8Array(analyser.fftSize);
+    const bars = [...node.querySelectorAll("i")];
+    const levels = new Array(bars.length).fill(0);
+    let last = 0;
+    node.classList.remove("hidden");
+    const frame = t => {
+      raf = requestAnimationFrame(frame);
+      if (t - last < 70) return;
+      last = t;
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (const v of buf) { const d = (v - 128) / 128; sum += d * d; }
+      levels.shift();
+      levels.push(Math.min(1, Math.sqrt(sum / buf.length) * 5));  // newest level on the right, older ones slide left
+      bars.forEach((b, i) => { b.style.transform = `scaleY(${(0.08 + levels[i] * 0.92).toFixed(3)})`; });
+    };
+    raf = requestAnimationFrame(frame);
+  }
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    if (ctx) { try { ctx.close(); } catch (e) {} }
+    ctx = null;
+  }
+  return { start, stop };
+})();
+
+// ---------- Passage highlighter (Reading) ----------
+// Like a highlighter pen on a paper test: switch it on, select words in the passage, and they are marked.
+// Tap or click a marked part (with the highlighter on) to remove it. Marks stay while you are on that passage.
+// LEARNING NOTE: a "Range" is the browser's description of what is selected (where it starts and ends). We walk every
+// piece of text inside the passage (a TreeWalker visits them in order), cut out the selected part of each piece with
+// splitText, and wrap it in a <mark> element. Wrapping piece by piece works even when the selection crosses a line break.
+function markRange(range, root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const pieces = [];
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    if (!range.intersectsNode(n) || !n.nodeValue.trim() || n.parentElement.closest("mark.hl")) continue;
+    const start = n === range.startContainer ? range.startOffset : 0;
+    const end = n === range.endContainer ? range.endOffset : n.nodeValue.length;
+    if (end > start) pieces.push([n, start, end]);
+  }
+  pieces.forEach(([n, start, end]) => {
+    const middle = n.splitText(start);
+    middle.splitText(end - start);
+    const mark = document.createElement("mark");
+    mark.className = "hl";
+    middle.parentNode.insertBefore(mark, middle);
+    mark.appendChild(middle);
+  });
+  return pieces.length;
+}
+function unmark(mark) {
+  const parent = mark.parentNode;
+  while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+  parent.removeChild(mark);
+  parent.normalize();  // join the text pieces back together
+}
+function highlighterBarHtml() {
+  return `<div class="hl-bar">
+    <button type="button" class="btn btn-sm" data-hl-toggle aria-pressed="false">Highlighter</button>
+    <button type="button" class="btn btn-sm" data-hl-clear>Clear highlights</button>
+    <span class="muted small" data-hl-hint>Turn on, then select words in the passage.</span>
+  </div>`;
+}
+// scope holds the bar and the .passage-text. onChange (optional) is told after each change, to remember the marks.
+function enableHighlighter(scope, onChange) {
+  const text = scope.querySelector(".passage-text"), toggle = scope.querySelector("[data-hl-toggle]");
+  if (!text || !toggle) return;
+  let on = false;
+  const changed = () => { if (onChange) onChange(text.innerHTML); };
+  toggle.onclick = () => {
+    on = !on;
+    toggle.setAttribute("aria-pressed", String(on));
+    text.classList.toggle("hl-on", on);
+    scope.querySelector("[data-hl-hint]").textContent = on ? "On: select words to mark them; tap a mark to remove it." : "Turn on, then select words in the passage.";
+  };
+  scope.querySelector("[data-hl-clear]").onclick = () => { text.querySelectorAll("mark.hl").forEach(unmark); changed(); };
+  const apply = () => {
+    if (!on) return;
+    const sel = window.getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    if (!text.contains(range.commonAncestorContainer)) return;
+    if (markRange(range, text)) { sel.removeAllRanges(); changed(); }
+  };
+  text.addEventListener("mouseup", apply);
+  // Phones select with a long press and handles, with no mouseup: wait until the selection has stopped changing.
+  let wait = 0;
+  const onSelect = () => {
+    if (!document.body.contains(text)) { document.removeEventListener("selectionchange", onSelect); return; }  // screen changed
+    clearTimeout(wait);
+    wait = setTimeout(apply, 700);
+  };
+  document.addEventListener("selectionchange", onSelect);
+  text.addEventListener("click", e => {
+    const m = e.target.closest("mark.hl");
+    if (m && on && window.getSelection().isCollapsed) { unmark(m); changed(); }
+  });
+}
+
+// ---------- Speech-to-text transcription (Speaking practice, opt-in) ----------
+// Uses the browser's built-in speech recognition. In Chrome and Edge this SENDS THE AUDIO to an online speech
+// service (Google's or Microsoft's) to turn it into text, so it is off unless the learner switches on
+// "Speaking transcripts" in Settings (Board decision 2026-11-05: opt-in). The recording itself never leaves the device.
+const Transcriber = (() => {
+  const Impl = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null, finalText = "";
+  const supported = !!Impl;
+  function start() {
+    if (!supported) return false;
+    finalText = "";
+    recognition = new Impl();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript + " ";
+      }
+    };
+    recognition.onerror = () => {};
+    try { recognition.start(); return true; } catch (e) { return false; }
+  }
+  function stop() {
+    return new Promise(resolve => {
+      if (!recognition) return resolve("");
+      // Some browsers never fire "end" (no connection, service down): give up after 3 seconds so the review still opens.
+      const giveUp = setTimeout(() => resolve(finalText.trim()), 3000);
+      recognition.onend = () => { clearTimeout(giveUp); resolve(finalText.trim()); };
+      try { recognition.stop(); } catch (e) { clearTimeout(giveUp); resolve(finalText.trim()); }
+    });
+  }
+  function abort() { if (recognition) { recognition.onend = null; try { recognition.abort(); } catch (e) {} recognition = null; } }
+  return { start, stop, abort, get supported() { return supported; } };
+})();
+
+// ---------- Router ----------
+const app = document.getElementById("app");
+const routes = {};
+function route(pattern, handler) { routes[pattern] = handler; }
+function navigate(hash) { window.location.hash = hash; }
+function currentRoute() { return (window.location.hash || "#/dashboard").slice(1); }
+
+// screenId goes up by one every time a new screen is drawn. Work that finishes later (speech ending, a recording being
+// saved) checks that the screen it belongs to is still showing (onScreen(id)) before it draws anything, so it can never
+// take over a page you moved to.
+let screenId = 0;
+function onScreen(id) { return id === screenId; }
+function render() {
+  screenId++;
+  Speech.stop();
+  stopAllTimers();
+  Recorder.cancel();             // a microphone left recording is switched off
+  Transcriber.abort();
+  window.onbeforeunload = null;  // the "exam in progress" warning belongs to the exam screen only
+  const path = currentRoute();
+  const parts = path.split("/").filter(Boolean);
+  document.querySelectorAll("#mainNav a").forEach(a => a.classList.toggle("active", a.dataset.section === parts[0]));
+  const top = parts[0] || "dashboard";
+  const handler = routes[top];
+  app.innerHTML = "";
+  if (handler) handler(parts.slice(1));
+  else routes["dashboard"]([]);
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", render);
+document.addEventListener("click", e => {
+  const a = e.target.closest('a[href^="#/"]');
+  if (a && a.getAttribute("href") === window.location.hash) { e.preventDefault(); render(); }
+});
+
+// ---------- Shared score helpers ----------
+function latestClbForSkill(history, skillId) {
+  const attempts = history
+    .filter(h => (h.type === "practice" && h.skill === skillId) || (h.type === "exam" && h.breakdown && h.breakdown[skillId]))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  if (!attempts.length) return null;
+  const last = attempts[attempts.length - 1];
+  return last.type === "exam" ? last.breakdown[skillId].clb : last.clb;
+}
+function bestClbForSkill(history, skillId) {
+  const attempts = history.filter(h => (h.type === "practice" && h.skill === skillId) || (h.type === "exam" && h.breakdown && h.breakdown[skillId]));
+  const vals = attempts.map(a => a.type === "exam" ? a.breakdown[skillId].clb : a.clb);
+  return vals.length ? Math.max(...vals) : null;
+}
+
+// ================= PRACTICE (mock quizzes) =================
+route("practice", (rest) => {
+  if (rest[0]) return renderPracticeSkill(rest[0]);
+  app.appendChild(el(`
+    <h1>Practice</h1>
+    <p class="muted">Short, focused mock quizzes for each skill. Every attempt is scored and saved so you can watch your progress.</p>
+    <section class="grid-4">
+      ${SKILLS.map(s => `<a class="card cta" href="#/practice/${s.id}">
+        <div class="stat-icon">${s.icon}</div><h3>${s.name}</h3>
+        <p class="muted small">${s.id === "listening" || s.id === "reading" ? "Multiple choice, instantly scored" : "Timed response with self-assessment rubric"}</p>
+      </a>`).join("")}
+    </section>
+  `));
+});
+
+function renderPracticeSkill(id) {
+  const skill = skillById(id);
+  if (!skill) return navigate("#/practice");
+  if (id === "listening" || id === "reading") return renderMcqPracticeIntro(skill);
+  return renderProductivePracticeIntro(skill);
+}
+
+// --- MCQ practice (listening/reading) ---
+function renderMcqPracticeIntro(skill) {
+  const passages = skill.data.passages;
+  const parts = skill.data.overview.parts;
+  const totalQ = passages.reduce((a, p) => a + p.questions.length, 0);
+
+  app.appendChild(el(`
+    <a href="#/practice" class="back-link">&larr; All practice</a>
+    <h1>${skill.icon} ${skill.name} Practice</h1>
+    <p class="muted">${passages.length} passages &middot; ${totalQ} questions in the pool. Every attempt pulls a fresh random selection, so you won't see the same set twice in a row.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Quick Practice</h3>
+        <p class="muted">1 random passage from any part, ~5 minutes. Great for a daily warm-up.</p>
+        <button class="btn btn-primary" id="quickBtn">Start Quick Practice</button>
+      </div>
+      <div class="card">
+        <h3>Timed Section</h3>
+        <p class="muted">One passage per part with a running clock, ${skill.id === "listening" ? "about 47 minutes" : "about 55 minutes"} in total. When time is up the set ends. Good for the weekly timed mini-test.</p>
+        <button class="btn" id="timedBtn">Start Timed Section</button>
+      </div>
+      <div class="card">
+        <h3>Section Mock</h3>
+        <p class="muted">One passage per official part (${parts.length} parts), back to back — mirrors the full real ${skill.name} section's variety and length.</p>
+        <button class="btn" id="sectionBtn">Start Section Mock</button>
+      </div>
+    </div>
+    <h2 class="mt">Practice by Part</h2>
+    <p class="muted">Drill one specific part until it clicks.</p>
+    <div class="grid-2">
+      ${parts.map((p, i) => {
+        const partNum = i + 1;
+        const count = passages.filter(ps => ps.partNum === partNum).length;
+        return `<div class="card">
+          <span class="tag">${p.name}</span>
+          <p class="muted small">${p.desc}</p>
+          <p class="muted small">${count} passages available</p>
+          <button class="btn" data-part="${partNum}" ${count === 0 ? "disabled" : ""}>Practice this part</button>
+        </div>`;
+      }).join("")}
+    </div>
+  `));
+
+  document.getElementById("quickBtn").onclick = () => runMcqPractice(skill, sample(passages, 1));
+  document.getElementById("timedBtn").onclick = () => {
+    const set = parts.map((p, i) => sample(passages.filter(ps => ps.partNum === i + 1), 1)[0]).filter(Boolean);
+    runMcqPractice(skill, set, { timeLimitSec: (skill.id === "listening" ? 47 : 55) * 60 });
+  };
+  document.getElementById("sectionBtn").onclick = () => {
+    const set = parts.map((p, i) => sample(passages.filter(ps => ps.partNum === i + 1), 1)[0]).filter(Boolean);
+    runMcqPractice(skill, set);
+  };
+  app.querySelectorAll("[data-part]").forEach(btn => {
+    btn.onclick = () => {
+      const partNum = parseInt(btn.dataset.part);
+      const pool = passages.filter(ps => ps.partNum === partNum);
+      runMcqPractice(skill, sample(pool, Math.min(3, pool.length)));
+    };
+  });
+}
+
+// opts.timeLimitSec turns on a running clock for the whole set (v2). When it reaches zero the passage on screen is
+// checked as it stands and the rest are skipped, like a real timed section.
+function runMcqPractice(skill, passageList, opts = {}) {
+  let pIndex = 0;
+  let clock = null, clockLeft = opts.timeLimitSec || 0, timeUp = false;
+  const userAnswers = []; // { passageId, answers: [selectedIndex,...] }
+
+  function renderPassage() {
+    const passage = passageList[pIndex];
+    const answers = new Array(passage.questions.length).fill(null);
+    const isListening = skill.id === "listening";
+
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <div class="run-header">
+        <span class="tag">${passage.part}</span>
+        <span class="muted small">Passage ${pIndex + 1} of ${passageList.length}</span>
+        <span class="answered muted small" id="answeredCount" aria-live="polite"></span>
+        ${opts.timeLimitSec ? `<span><span class="timer-label">Time left</span><span class="timer" id="mcqTimer" role="timer">${fmtTime(clockLeft)}</span></span>` : ""}
+      </div>
+      <h2>${passage.title}</h2>
+      ${isListening ? `
+        <div class="audio-box">
+          ${Speech.supported ? `
+            <button class="btn" id="playBtn">Play audio</button>
+            <span class="muted small" id="audioStatus">Not played yet</span>
+          ` : `<p class="muted">Your browser doesn't support text-to-speech playback. Read the transcript below instead:</p><p class="transcript">${escapeHtml(passage.script)}</p>`}
+        </div>
+      ` : ""}
+      ${isListening ? "" : `<div class="split"><div class="split-passage" tabindex="0" role="region" aria-label="Passage">${highlighterBarHtml()}<div class="passage-text">${escapeHtml(passage.text).replace(/\n/g, "<br>")}</div></div><div class="split-questions">`}
+      <form id="qForm">
+        ${passage.questions.map((q, qi) => `
+          <div class="question-block">
+            <p class="q-text"><strong>${qi + 1}.</strong> ${escapeHtml(q.q)}</p>
+            <div class="options">
+              ${q.options.map((opt, oi) => `
+                <label class="option">
+                  <input type="radio" name="q${qi}" value="${oi}">
+                  <span>${escapeHtml(opt)}</span>
+                </label>
+              `).join("")}
+            </div>
+          </div>
+        `).join("")}
+      </form>
+      <div class="run-footer">
+        <button class="btn btn-primary" id="submitPassage">Check Answers</button>
+      </div>
+      ${isListening ? "" : `</div></div>`}
+    `));
+    watchAnswered(document.getElementById("qForm"), document.getElementById("answeredCount"), passage.questions.length);
+    if (!isListening) enableHighlighter(app.querySelector(".split-passage"));
+
+    if (isListening && Speech.supported) {
+      const playBtn = document.getElementById("playBtn");
+      const status = document.getElementById("audioStatus");
+      playBtn.onclick = () => {
+        playBtn.disabled = true;
+        status.textContent = "Playing...";
+        Speech.speak(passage.script, { onend: () => { status.textContent = "Finished playing (click again to replay)"; playBtn.disabled = false; } });
+      };
+    }
+
+    if (opts.timeLimitSec && !clock) {
+      clock = Countdown(opts.timeLimitSec, r => { clockLeft = r; paintTimer("mcqTimer", r, opts.timeLimitSec); },
+        () => { timeUp = true; document.getElementById("submitPassage") && document.getElementById("submitPassage").click(); });
+      clock.start();
+    }
+    document.getElementById("submitPassage").onclick = () => {
+      const form = document.getElementById("qForm");
+      passage.questions.forEach((q, qi) => {
+        const val = form.querySelector(`input[name="q${qi}"]:checked`);
+        answers[qi] = val ? parseInt(val.value) : null;
+      });
+      userAnswers.push({ passageId: passage.id, answers });
+      showReview(passage, answers);
+    };
+  }
+
+  function showReview(passage, answers) {
+    if (window.Study) Study.recordMcq(skill.id, passage, answers, "practice");
+    const correctCount = passage.questions.filter((q, i) => answers[i] === q.answer).length;
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <h2>${passage.title} — Review</h2>
+      <p class="score-line">${correctCount} / ${passage.questions.length} correct</p>
+      ${passage.questions.map((q, qi) => {
+        const correct = answers[qi] === q.answer;
+        return `<div class="question-block review ${correct ? "correct" : "incorrect"}">
+          <p class="q-text"><strong>${qi + 1}.</strong> ${escapeHtml(q.q)}</p>
+          <div class="options">
+            ${q.options.map((opt, oi) => {
+              let cls = "";
+              if (oi === q.answer) cls = "right-answer";
+              else if (oi === answers[qi]) cls = "wrong-answer";
+              return `<div class="option static ${cls}">${escapeHtml(opt)}</div>`;
+            }).join("")}
+          </div>
+          ${window.Study ? Study.explanationHtml(passage, qi, correct) : ""}
+        </div>`;
+      }).join("")}
+      <div class="run-footer">
+        <button class="btn btn-primary" id="nextPassage">${pIndex + 1 < passageList.length && !timeUp ? "Next Passage" : "Finish & See Score"}</button>
+      </div>
+    `));
+    document.getElementById("nextPassage").onclick = () => {
+      pIndex++;
+      if (pIndex < passageList.length && !timeUp) renderPassage();
+      else finishPractice();
+    };
+  }
+
+  function finishPractice() {
+    if (clock) clock.stop();
+    let totalCorrect = 0, totalQuestions = 0;
+    userAnswers.forEach(ua => {
+      const passage = passageList.find(p => p.id === ua.passageId);
+      totalQuestions += passage.questions.length;
+      totalCorrect += passage.questions.filter((q, i) => ua.answers[i] === q.answer).length;
+    });
+    // In a timed section, passages the clock cut off count as unanswered (wrong), like a real test.
+    if (opts.timeLimitSec) passageList.forEach(p => { if (!userAnswers.some(u => u.passageId === p.id)) totalQuestions += p.questions.length; });
+    const pct = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+    const clb = clbFromPercent(pct);
+    const attempt = Storage.saveAttempt({
+      type: "practice", skill: skill.id, mode: opts.timeLimitSec ? "mcq-timed" : "mcq",
+      passageIds: passageList.map(p => p.id),
+      correct: totalCorrect, total: totalQuestions, pct, clb
+    });
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <div class="card result-card">
+        <h1>Practice Complete</h1>
+        <div class="big-score">${pct}%</div>
+        <p>${totalCorrect} / ${totalQuestions} correct &middot; estimated CLB <strong>${clb}</strong></p>
+        <p class="muted">Saved to your history on ${fmtDate(attempt.date)}.</p>
+        <div class="cta-row-single">
+          <a class="btn btn-primary" href="#/practice/${skill.id}">Practice Again</a>
+          <a class="btn" href="#/history">View History</a>
+        </div>
+      </div>
+    `));
+  }
+
+  renderPassage();
+}
+
+// --- Productive practice (writing/speaking) ---
+function renderProductivePracticeIntro(skill) {
+  return skill.id === "writing" ? renderWritingIntro(skill) : renderSpeakingIntro(skill);
+}
+
+function renderWritingIntro(skill) {
+  const prompts = skill.data.prompts;
+  const emailPrompts = prompts.filter(p => p.taskType === "email");
+  const surveyPrompts = prompts.filter(p => p.taskType === "survey");
+  app.appendChild(el(`
+    <a href="#/practice" class="back-link">&larr; All practice</a>
+    <h1>${skill.icon} Writing Practice</h1>
+    <p class="muted">${prompts.length} scenarios in the pool. You'll get a real countdown timer, then self-assess using the official-style rubric.</p>
+    <div class="grid-2">
+      <div class="card">
+        <span class="tag">Task 1</span>
+        <h3>Writing an Email</h3>
+        <p class="muted small">${emailPrompts.length} scenarios &middot; 27 min &middot; 150-200 words</p>
+        <button class="btn btn-primary" id="emailBtn" ${emailPrompts.length === 0 ? "disabled" : ""}>Random Email Task</button>
+      </div>
+      <div class="card">
+        <span class="tag">Task 2</span>
+        <h3>Survey Response</h3>
+        <p class="muted small">${surveyPrompts.length} scenarios &middot; 26 min &middot; 150-200 words</p>
+        <button class="btn btn-primary" id="surveyBtn" ${surveyPrompts.length === 0 ? "disabled" : ""}>Random Survey Task</button>
+      </div>
+    </div>
+    <h3 class="mt">Or pick a specific scenario</h3>
+    <div class="scenario-list">
+      ${prompts.map(p => `<button class="scenario-item" data-id="${p.id}"><span class="tag">${p.taskType === "email" ? "Email" : "Survey"}</span>${escapeHtml(p.title || p.task)}</button>`).join("")}
+    </div>
+  `));
+  if (emailPrompts.length) document.getElementById("emailBtn").onclick = () => runWritingTask(skill, sample(emailPrompts, 1)[0], false);
+  if (surveyPrompts.length) document.getElementById("surveyBtn").onclick = () => runWritingTask(skill, sample(surveyPrompts, 1)[0], false);
+  app.querySelectorAll(".scenario-item").forEach(btn => {
+    btn.onclick = () => runWritingTask(skill, prompts.find(p => p.id === btn.dataset.id), false);
+  });
+}
+
+function renderSpeakingIntro(skill) {
+  const prompts = skill.data.prompts;
+  const taskNums = [...new Set(prompts.map(p => p.taskNum))].sort((a, b) => a - b);
+  app.appendChild(el(`
+    <a href="#/practice" class="back-link">&larr; All practice</a>
+    <h1>${skill.icon} Speaking Practice</h1>
+    <p class="muted">${prompts.length} scenarios across the 8 official task types. Pick one to drill, or let it surprise you.</p>
+    <div class="grid-2">
+      ${taskNums.map(tn => {
+        const group = prompts.filter(p => p.taskNum === tn);
+        return `<div class="card">
+          <span class="tag">${group[0].task}</span>
+          <p class="muted small">${group.length} scenarios &middot; ${group[0].prepSec}s prep / ${group[0].responseSec}s response</p>
+          <button class="btn btn-primary" data-tasknum="${tn}">Random for this task</button>
+        </div>`;
+      }).join("")}
+      <div class="card">
+        <h3>Surprise Me</h3>
+        <p class="muted">Fully random across all 8 task types.</p>
+        <button class="btn" id="randomBtn">Start Random</button>
+      </div>
+    </div>
+  `));
+  app.querySelectorAll("[data-tasknum]").forEach(btn => {
+    btn.onclick = () => {
+      const tn = parseInt(btn.dataset.tasknum);
+      runSpeakingTask(skill, sample(prompts.filter(p => p.taskNum === tn), 1)[0], false);
+    };
+  });
+  document.getElementById("randomBtn").onclick = () => runSpeakingTask(skill, sample(prompts, 1)[0], false);
+}
+
+function runWritingTask(skill, prompt, isExam, onComplete) {
+  let timer = null, timeUp = false;
+  app.innerHTML = "";
+  app.appendChild(el(`
+    <div class="run-header"><span class="tag">${prompt.task}</span><span class="timer" id="timerDisplay" role="timer">${fmtTime(prompt.timeLimitMin * 60)}</span></div>
+    <h2>${prompt.title || prompt.task}</h2>
+    <div class="prompt-box">${escapeHtml(prompt.prompt).replace(/\n/g, "<br>")}</div>
+    <textarea id="writingArea" rows="12" placeholder="Start writing here..."></textarea>
+    <div class="run-footer">
+      <span class="muted small" id="wordCountLabel">0 words</span>
+      <button class="btn btn-primary" id="submitWriting">Submit</button>
+    </div>
+  `));
+  const textarea = document.getElementById("writingArea");
+  const wcLabel = document.getElementById("wordCountLabel");
+  textarea.addEventListener("input", () => {
+    const wc = wordCount(textarea.value);
+    wcLabel.textContent = `${wc} word${wc === 1 ? "" : "s"} (target ${prompt.wordTarget[0]}-${prompt.wordTarget[1]})`;
+  });
+
+  timer = Countdown(prompt.timeLimitMin * 60,
+    remaining => paintTimer("timerDisplay", remaining, prompt.timeLimitMin * 60),
+    () => { timeUp = true; submit(); }
+  );
+  timer.start();
+
+  document.getElementById("submitWriting").onclick = () => submit();
+
+  function submit() {
+    timer.stop();
+    const text = textarea.value;
+    showWritingChecklist(skill, prompt, text, isExam, onComplete);
+  }
+}
+
+function renderSubscoreBars(subscores) {
+  const labels = { vocabulary: "Vocabulary", readability: "Readability", structure: "Structure", coherence: "Coherence" };
+  return Object.entries(subscores).map(([k, v]) => `
+    <div class="subscore-row">
+      <span class="subscore-label">${labels[k] || k}</span>
+      <div class="subscore-bar"><div class="subscore-fill" style="width:${v}%"></div></div>
+      <span class="subscore-val">${v}</span>
+    </div>
+  `).join("");
+}
+
+function showWritingChecklist(skill, prompt, text, isExam, onComplete) {
+  const heuristic = analyzeText(text);
+
+  app.innerHTML = "";
+  app.appendChild(el(`
+    <h2>Self-Assessment</h2>
+    <p class="muted">The panel below is an automated <strong>heuristic</strong> estimate (free, local, objective metrics only) — it cannot judge whether your ideas make sense or your argument holds together, which is what real CELPIP raters assess. Use the checklist for that judgment call yourself.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Your response</h3>
+        <p class="muted small">${wordCount(text)} words</p>
+        <div class="passage-text">${escapeHtml(text).replace(/\n/g, "<br>") || "<em>(empty)</em>"}</div>
+      </div>
+      <div class="card">
+        <h3>Checklist (Task Fulfillment — you judge this)</h3>
+        <form id="checklistForm">
+          ${prompt.checklist.map((c, i) => `<label class="check-item"><input type="checkbox" name="c${i}"> ${escapeHtml(c)}</label>`).join("")}
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Heuristic Analysis <span class="muted small">(automated, local)</span></h3>
+      ${heuristic.insufficientData ? '<p class="muted">Too little text to analyze meaningfully.</p>' : `
+        ${renderSubscoreBars(heuristic.subscores)}
+        <p class="muted small mt">${heuristic.sentenceCount} sentences &middot; avg ${heuristic.avgSentenceLength} words/sentence${heuristic.fleschReadingEase !== null ? ` &middot; readability score ${heuristic.fleschReadingEase}` : ""}</p>
+      `}
+      <p class="muted small">Heuristic estimate: <strong>${heuristic.compositePct}%</strong> &rarr; CLB <strong>${heuristic.clb}</strong></p>
+    </div>
+    ${window.Study ? Study.modelHtml("writing", prompt) : ""}
+    <div class="card">
+      <h4>Final self-rating (estimated CLB)</h4>
+      <input type="range" min="1" max="12" value="${heuristic.clb}" id="clbSlider">
+      <div class="muted small">Selected: <strong id="clbSliderVal">${heuristic.clb}</strong> / 12 <span class="muted">(defaults to heuristic estimate — adjust if you disagree, or if you got AI feedback)</span></div>
+    </div>
+    <div class="run-footer">
+      <button class="btn btn-primary" id="saveWriting">Save Result</button>
+    </div>
+  `));
+  const slider = document.getElementById("clbSlider");
+  slider.oninput = () => document.getElementById("clbSliderVal").textContent = slider.value;
+
+  document.getElementById("saveWriting").onclick = () => {
+    const form = document.getElementById("checklistForm");
+    const checked = prompt.checklist.filter((c, i) => form.querySelector(`[name="c${i}"]`).checked).length;
+    const selfClb = parseInt(slider.value);
+    const result = {
+      promptId: prompt.id, wordCount: wordCount(text), checklistScore: checked, checklistTotal: prompt.checklist.length,
+      selfClb, text, heuristicClb: heuristic.clb, heuristicPct: heuristic.compositePct
+    };
+    if (isExam) { onComplete(result); return; }
+    const attempt = Storage.saveAttempt({ type: "practice", skill: skill.id, mode: "writing", ...result, clb: selfClb });
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <div class="card result-card">
+        <h1>Practice Saved</h1>
+        <div class="big-score">${selfClb}</div>
+        <p>Estimated CLB &middot; ${checked}/${prompt.checklist.length} checklist items met</p>
+        <p class="muted">Saved on ${fmtDate(attempt.date)}.</p>
+        <div class="cta-row-single">
+          <a class="btn btn-primary" href="#/practice/writing">Practice Again</a>
+          <a class="btn" href="#/history">View History</a>
+        </div>
+      </div>
+    `));
+  };
+}
+
+function runSpeakingTask(skill, prompt, isExam, onComplete) {
+  const myScreen = screenId;  // this task's screen; see onScreen()
+  app.innerHTML = "";
+  app.appendChild(el(`
+    <div class="run-header"><span class="tag">${prompt.task}</span></div>
+    <div class="prompt-box">${escapeHtml(prompt.prompt).replace(/\n/g, "<br>")}</div>
+    <div class="phase-box">
+      <div class="phase-label" id="phaseLabel">Preparation</div>
+      ${ringTimerHtml(prompt.prepSec)}
+      <p class="muted small" id="phaseHint">Jot down 2-3 key points mentally. Speaking starts automatically when prep ends.</p>
+      <div id="recIndicator" class="rec-indicator hidden">Recording...</div>
+      <div id="micMeter" class="mic-meter hidden" role="img" aria-label="Microphone level: the bars move when the microphone hears you">${"<i></i>".repeat(24)}</div>
+    </div>
+    <div class="run-footer" id="skipRow">
+      <button class="btn" id="skipPrep">Skip to Response</button>
+    </div>
+  `));
+
+  let recordingUrl = null;
+  document.getElementById("skipPrep").onclick = () => { prepTimer.stop(); startResponse(); };
+
+  const prepTimer = Countdown(prompt.prepSec,
+    r => { paintTimer("timerDisplay", r, prompt.prepSec); paintRing("ringFill", r, prompt.prepSec); },
+    () => startResponse()
+  );
+  prepTimer.start();
+
+  async function startResponse() {
+    document.getElementById("phaseLabel").textContent = "Response";
+    document.querySelector(".ring-wrap").classList.add("responding");
+    paintRing("ringFill", prompt.responseSec, prompt.responseSec);
+    document.getElementById("phaseHint").textContent = "Speak your answer out loud now.";
+    document.getElementById("skipRow").innerHTML = `<button class="btn btn-primary" id="finishEarly">Finish Response</button>`;
+    const recIndicator = document.getElementById("recIndicator");
+
+    let recorderActive = false;
+    try {
+      await Recorder.start();
+      if (!onScreen(myScreen)) { Recorder.cancel(); return; }  // you left while the microphone was starting
+      recorderActive = true;
+      recIndicator.classList.remove("hidden");
+      MicMeter.start(Recorder.stream, document.getElementById("micMeter"));
+    } catch (e) {
+      recIndicator.classList.remove("hidden");
+      recIndicator.textContent = "Mic unavailable — speak out loud; timer only (no recording).";
+    }
+    const transcribing = Storage.getSettings().speechToText ? Transcriber.start() : false;  // opt-in, see Transcriber
+
+    document.getElementById("finishEarly").onclick = () => { respTimer.stop(); finish(recorderActive); };
+    const respTimer = Countdown(prompt.responseSec,
+      r => { paintTimer("timerDisplay", r, prompt.responseSec); paintRing("ringFill", r, prompt.responseSec); },
+      () => finish(recorderActive)
+    );
+    respTimer.start();
+
+    async function finish(wasRecording) {
+      if (!onScreen(myScreen)) return;
+      MicMeter.stop();
+      if (wasRecording) { try { recordingUrl = await Recorder.stop(); } catch (e) { recordingUrl = null; } }
+      let transcript = "";
+      if (transcribing) { try { transcript = await Transcriber.stop(); } catch (e) { transcript = ""; } }
+      if (onScreen(myScreen)) showSpeakingReview(transcript);
+    }
+  }
+
+  function showSpeakingReview(transcript) {
+    const heuristic = transcript && transcript.length > 0 ? analyzeText(transcript, { durationSec: prompt.responseSec }) : null;
+    const defaultClb = heuristic && !heuristic.insufficientData ? heuristic.clb : 7;
+
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <h2>Self-Assessment</h2>
+      <p class="muted">Listen back to your response if it was recorded, then rate yourself honestly.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Your recording</h3>
+          ${recordingUrl ? `<audio controls src="${recordingUrl}"></audio>` : `<p class="muted">No recording available for this attempt (microphone unavailable or skipped).</p>`}
+          ${transcript ? `<h4 class="mt">Transcript (auto-generated, may contain errors)</h4><div class="passage-text">${escapeHtml(transcript)}</div>` : `<p class="muted small mt">${!Storage.getSettings().speechToText ? 'Transcripts are off. You can turn them on in <a href="#/settings">Settings</a>; this sends your spoken answer to an online speech service, so it is your choice.' : "No transcript available" + (Transcriber.supported ? " for this attempt." : ": this browser cannot turn speech into text.")}</p>`}
+        </div>
+        <div class="card">
+          <h3>Self-rating (estimated CLB)</h3>
+          <input type="range" min="1" max="12" value="${defaultClb}" id="clbSlider">
+          <div class="muted small">Selected: <strong id="clbSliderVal">${defaultClb}</strong> / 12</div>
+          <ul class="tips-list mt">
+            <li>Did you address the full prompt?</li>
+            <li>Did you speak for most/all of the response time?</li>
+            <li>Was your speech organized with clear linking words?</li>
+          </ul>
+        </div>
+      </div>
+      ${heuristic && !heuristic.insufficientData ? `
+        <div class="card">
+          <h3>Heuristic Analysis <span class="muted small">(automated, local, based on transcript)</span></h3>
+          ${renderSubscoreBars(heuristic.subscores)}
+          <p class="muted small mt">${heuristic.wordCount} words &middot; ~${heuristic.wpm} words/min${heuristic.fillerCount ? ` &middot; ${heuristic.fillerCount} filler word(s) detected` : ""}</p>
+          <p class="muted small">Heuristic estimate: <strong>${heuristic.compositePct}%</strong> &rarr; CLB <strong>${heuristic.clb}</strong></p>
+        </div>
+      ` : ""}
+      ${window.Study ? Study.modelHtml("speaking", prompt) : ""}
+      <div class="run-footer">
+        <button class="btn btn-primary" id="saveSpeaking">Save Result</button>
+      </div>
+    `));
+    const slider = document.getElementById("clbSlider");
+    slider.oninput = () => document.getElementById("clbSliderVal").textContent = slider.value;
+
+    document.getElementById("saveSpeaking").onclick = () => {
+      const selfClb = parseInt(slider.value);
+      const result = {
+        promptId: prompt.id, selfClb, hasRecording: !!recordingUrl, hasTranscript: !!transcript,
+        heuristicClb: heuristic && !heuristic.insufficientData ? heuristic.clb : null
+      };
+      if (isExam) { onComplete(result); return; }
+      const attempt = Storage.saveAttempt({ type: "practice", skill: skill.id, mode: "speaking", ...result, clb: selfClb });
+      app.innerHTML = "";
+      app.appendChild(el(`
+        <div class="card result-card">
+          <h1>Practice Saved</h1>
+          <div class="big-score">${selfClb}</div>
+          <p>Estimated CLB</p>
+          <p class="muted">Saved on ${fmtDate(attempt.date)}.</p>
+          <div class="cta-row-single">
+            <a class="btn btn-primary" href="#/practice/speaking">Practice Again</a>
+            <a class="btn" href="#/history">View History</a>
+          </div>
+        </div>
+      `));
+    };
+  }
+}
+
+// ================= TIMED EXAM =================
+// Sample exactly one item per official part/task, mirroring the real exam's fixed structure —
+// used for both the exam preview estimate and the actual run, so each attempt draws fresh content.
+// Picks one random item for each numbered part, mirroring the real exam's fixed structure.
+function sampleOnePerPart(pool, numParts) {
+  return Array.from({ length: numParts }, (_, i) => sample(pool.filter(p => p.partNum === i + 1), 1)[0]).filter(Boolean);
+}
+function sampleOnePerSpeakingTask(pool) {
+  return Array.from({ length: 8 }, (_, i) => sample(pool.filter(p => p.taskNum === i + 1), 1)[0]).filter(Boolean);
+}
+function sampleExamWriting(pool) {
+  const email = sample(pool.filter(p => p.taskType === "email"), 1)[0];
+  const survey = sample(pool.filter(p => p.taskType === "survey"), 1)[0];
+  return [email, survey].filter(Boolean);
+}
+
+route("exam", (rest) => {
+  if (rest[0] === "run") return startFullExam();
+  const listeningParts = LISTENING_DATA.overview.parts.length;
+  const readingParts = READING_DATA.overview.parts.length;
+  const speakingSample = sampleOnePerSpeakingTask(SPEAKING_DATA.prompts);
+  const totalMin = Math.round(
+    50 + // listening (official ~47-55 min)
+    55 + // reading (official ~55-60 min)
+    53 + // writing (27 + 26 min)
+    speakingSample.reduce((a, p) => a + (p.prepSec + p.responseSec) / 60, 0)
+  );
+  app.appendChild(el(`
+    <h1>Full Timed Exam</h1>
+    <p class="muted">A single continuous simulation across all four skills, using real CELPIP-style timing and question counts (Listening: ${listeningParts} parts, Reading: ${readingParts} parts, Writing: 2 tasks, Speaking: 8 tasks). Content is randomly sampled from the full practice pool each time, so no two attempts are identical. Once started, sections auto-advance just like the real test. Estimated total time: <strong>~${totalMin} minutes</strong>.</p>
+    <div class="grid-4">
+      ${SKILLS.map(s => `<div class="stat-card"><div class="stat-icon">${s.icon}</div><div class="stat-name">${s.name}</div></div>`).join("")}
+    </div>
+    <div class="card">
+      <h3>Before you start</h3>
+      <ul class="tips-list">
+        <li>Find a quiet space and, for Speaking, allow microphone access when prompted (optional — the timer still works without it).</li>
+        <li>Sections play automatically. You cannot pause once a section begins, just like the real exam.</li>
+        <li>Your final report is saved to History automatically when you finish.</li>
+      </ul>
+      <div class="cta-row-single"><a class="btn btn-primary" href="#/exam/run">Begin Full Exam</a></div>
+    </div>
+  `));
+});
+
+function startFullExam() {
+  const results = { listening: null, reading: null, writing: [], speaking: [] };
+  const examListening = sampleOnePerPart(LISTENING_DATA.passages, LISTENING_DATA.overview.parts.length);
+  const examWriting = sampleExamWriting(WRITING_DATA.prompts);
+  const examSpeaking = sampleOnePerSpeakingTask(SPEAKING_DATA.prompts);
+
+  window.onbeforeunload = () => "An exam is in progress. Leaving now will lose your progress.";
+
+  runListeningSection(0, { correct: 0, total: 0 });
+
+  function runListeningSection(index, tally) {
+    if (index >= examListening.length) {
+      results.listening = tally;
+      return runReadingSection();
+    }
+    const passage = examListening[index];
+    let phase = "preview";
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <div class="exam-banner">EXAM IN PROGRESS &middot; Listening &middot; Passage ${index + 1} of ${examListening.length}</div>
+      <h2>${passage.title}</h2>
+      <p class="tag">${passage.part}</p>
+      <div id="examListeningBody"></div>
+    `));
+    renderPreview();
+
+    function renderPreview() {
+      const body = document.getElementById("examListeningBody");
+      body.innerHTML = `
+        <div class="phase-box">
+          <div class="phase-label">Preview — read the questions</div>
+          <div class="timer big" id="timerDisplay" role="timer">${fmtTime(12)}</div>
+        </div>
+        <div class="questions-preview">
+          ${passage.questions.map((q, i) => `<p class="muted small">${i + 1}. ${escapeHtml(q.q)}</p>`).join("")}
+        </div>
+      `;
+      Countdown(12, r => paintTimer("timerDisplay", r, 12), renderPlaying).start();
+    }
+
+    function renderPlaying() {
+      const body = document.getElementById("examListeningBody");
+      body.innerHTML = `
+        <div class="phase-box">
+          <div class="phase-label">Playing audio (once)</div>
+          <div class="rec-indicator">Listen carefully...</div>
+        </div>
+      `;
+      let done = false;
+      const myScreen = screenId;
+      const fallbackMs = Math.max(6000, (passage.script.split(/\s+/).length / 2.2) * 1000 + 3000);
+      const fallback = setTimeout(() => { if (!done && onScreen(myScreen)) { done = true; renderAnswering(); } }, fallbackMs);
+      Speech.speak(passage.script, { onend: () => { if (!done && onScreen(myScreen)) { done = true; clearTimeout(fallback); renderAnswering(); } } });
+    }
+
+    function renderAnswering() {
+      const body = document.getElementById("examListeningBody");
+      const answerTime = passage.questions.length * 20;
+      body.innerHTML = `
+        <div class="run-header"><span class="phase-label">Answer the questions</span><span class="answered muted small" id="answeredCount" aria-live="polite"></span><span class="timer" id="timerDisplay" role="timer">${fmtTime(answerTime)}</span></div>
+        <form id="qForm">
+          ${passage.questions.map((q, qi) => `
+            <div class="question-block">
+              <p class="q-text"><strong>${qi + 1}.</strong> ${escapeHtml(q.q)}</p>
+              <div class="options">
+                ${q.options.map((opt, oi) => `<label class="option"><input type="radio" name="q${qi}" value="${oi}"><span>${escapeHtml(opt)}</span></label>`).join("")}
+              </div>
+            </div>
+          `).join("")}
+        </form>
+        <div class="run-footer"><button class="btn btn-primary" id="nextBtn">Next Passage</button></div>
+      `;
+      watchAnswered(document.getElementById("qForm"), document.getElementById("answeredCount"), passage.questions.length);
+      const timer = Countdown(answerTime, r => paintTimer("timerDisplay", r, answerTime), () => finishPassage());
+      timer.start();
+      document.getElementById("nextBtn").onclick = () => { timer.stop(); finishPassage(); };
+
+      function finishPassage() {
+        const form = document.getElementById("qForm");
+        let correct = 0;
+        const examAnswers = [];
+        passage.questions.forEach((q, qi) => {
+          const val = form.querySelector(`input[name="q${qi}"]:checked`);
+          examAnswers.push(val ? parseInt(val.value) : null);
+          if (val && parseInt(val.value) === q.answer) correct++;
+        });
+        if (window.Study) Study.recordMcq("listening", passage, examAnswers, "exam");
+        tally.correct += correct;
+        tally.total += passage.questions.length;
+        runListeningSection(index + 1, tally);
+      }
+    }
+  }
+
+  function runReadingSection() {
+    const passages = sampleOnePerPart(READING_DATA.passages, READING_DATA.overview.parts.length);
+    let activeIdx = 0;
+    const allAnswers = passages.map(p => new Array(p.questions.length).fill(null));
+    const marked = [];  // the passage text with your highlights, per passage, so switching tabs keeps them
+    const totalQ = passages.reduce((a, p) => a + p.questions.length, 0);
+    const answeredIn = i => allAnswers[i].filter(a => a !== null).length;
+
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <div class="exam-banner">EXAM IN PROGRESS &middot; Reading &middot; ${passages.length} passages, one timer</div>
+      <div class="run-header"><span class="answered muted small" id="answeredTotal" aria-live="polite"></span><span class="timer" id="timerDisplay" role="timer">${fmtTime(55 * 60)}</span></div>
+      <div class="tabs" id="readingTabs">
+        ${passages.map((p, i) => `<button class="tab-btn ${i === 0 ? "active" : ""}" data-i="${i}">${i + 1}. ${p.part.split(":")[0]} <span class="tab-count" id="tabCount${i}">0/${p.questions.length}</span></button>`).join("")}
+      </div>
+      <div id="readingBody"></div>
+      <div class="run-footer"><button class="btn btn-primary" id="submitReading">Submit Reading Section</button></div>
+    `));
+
+    // Updates "12 of 38 answered" above the tabs and the small "3/11" on each tab.
+    function paintCounts() {
+      const done = passages.reduce((a, p, i) => a + answeredIn(i), 0);
+      const total = document.getElementById("answeredTotal");
+      total.textContent = `${done} of ${totalQ} answered`;
+      total.classList.toggle("all-done", done === totalQ);
+      passages.forEach((p, i) => { const c = document.getElementById("tabCount" + i); c.textContent = `${answeredIn(i)}/${p.questions.length}`; c.classList.toggle("all-done", answeredIn(i) === p.questions.length); });
+    }
+
+    function renderActive() {
+      const p = passages[activeIdx];
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", parseInt(b.dataset.i) === activeIdx));
+      document.getElementById("readingBody").innerHTML = `
+        <h2>${p.title}</h2>
+        <div class="split">
+          <div class="split-passage" tabindex="0" role="region" aria-label="Passage">${highlighterBarHtml()}<div class="passage-text">${marked[activeIdx] || escapeHtml(p.text).replace(/\n/g, "<br>")}</div></div>
+          <div class="split-questions"><form id="qForm">
+          ${p.questions.map((q, qi) => `
+            <div class="question-block">
+              <p class="q-text"><strong>${qi + 1}.</strong> ${escapeHtml(q.q)}</p>
+              <div class="options">
+                ${q.options.map((opt, oi) => `<label class="option"><input type="radio" name="q${qi}" value="${oi}" ${allAnswers[activeIdx][qi] === oi ? "checked" : ""}><span>${escapeHtml(opt)}</span></label>`).join("")}
+              </div>
+            </div>
+          `).join("")}
+          </form></div>
+        </div>
+      `;
+      const idx = activeIdx;
+      document.getElementById("qForm").addEventListener("change", e => {
+        const match = e.target.name.match(/^q(\d+)$/);
+        if (match) allAnswers[idx][parseInt(match[1])] = parseInt(e.target.value);
+        paintCounts();
+      });
+      // marked[] only ever holds this passage's own (escaped) text plus <mark> tags the highlighter added.
+      enableHighlighter(document.querySelector("#readingBody .split-passage"), html => { marked[idx] = html; });
+    }
+    document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => { activeIdx = parseInt(b.dataset.i); renderActive(); });
+    renderActive();
+    paintCounts();
+
+    const timer = Countdown(55 * 60, r => paintTimer("timerDisplay", r, 55 * 60), () => submit());
+    timer.start();
+    document.getElementById("submitReading").onclick = () => { timer.stop(); submit(); };
+
+    function submit() {
+      let correct = 0, total = 0;
+      passages.forEach((p, pi) => {
+        total += p.questions.length;
+        p.questions.forEach((q, qi) => { if (allAnswers[pi][qi] === q.answer) correct++; });
+        if (window.Study) Study.recordMcq("reading", p, allAnswers[pi], "exam");
+      });
+      results.reading = { correct, total };
+      runWritingSection(0);
+    }
+  }
+
+  function runWritingSection(index) {
+    if (index >= examWriting.length) return runSpeakingSection(0);
+    runWritingTask(skillById("writing"), examWriting[index], true, (result) => {
+      results.writing.push(result);
+      runWritingSection(index + 1);
+    });
+    prependExamBanner(`Writing &middot; Task ${index + 1} of ${examWriting.length}`);
+  }
+
+  function runSpeakingSection(index) {
+    if (index >= examSpeaking.length) return finishExam();
+    runSpeakingTask(skillById("speaking"), examSpeaking[index], true, (result) => {
+      results.speaking.push(result);
+      runSpeakingSection(index + 1);
+    });
+    prependExamBanner(`Speaking &middot; Task ${index + 1} of ${examSpeaking.length}`);
+  }
+
+  function prependExamBanner(text) {
+    const banner = el(`<div class="exam-banner">EXAM IN PROGRESS &middot; ${text}</div>`);
+    app.prepend(banner);
+  }
+
+  function finishExam() {
+    window.onbeforeunload = null;
+    const listeningPct = results.listening.total ? Math.round((results.listening.correct / results.listening.total) * 100) : 0;
+    const readingPct = results.reading.total ? Math.round((results.reading.correct / results.reading.total) * 100) : 0;
+    const writingClb = Math.round(results.writing.reduce((a, r) => a + r.selfClb, 0) / (results.writing.length || 1));
+    const speakingClb = Math.round(results.speaking.reduce((a, r) => a + r.selfClb, 0) / (results.speaking.length || 1));
+    const breakdown = {
+      listening: { pct: listeningPct, clb: clbFromPercent(listeningPct), correct: results.listening.correct, total: results.listening.total },
+      reading: { pct: readingPct, clb: clbFromPercent(readingPct), correct: results.reading.correct, total: results.reading.total },
+      writing: { clb: writingClb, tasks: results.writing.length },
+      speaking: { clb: speakingClb, tasks: results.speaking.length }
+    };
+    const overall = Math.round((breakdown.listening.clb + breakdown.reading.clb + breakdown.writing.clb + breakdown.speaking.clb) / 4);
+    const attempt = Storage.saveAttempt({ type: "exam", breakdown, overall });
+
+    app.innerHTML = "";
+    app.appendChild(el(`
+      <div class="card result-card">
+        <h1>Exam Complete</h1>
+        <div class="big-score">${overall}</div>
+        <p>Estimated overall CLB level</p>
+        <div class="grid-4 mt">
+          ${SKILLS.map(s => `<div class="stat-card"><div class="stat-icon">${s.icon}</div><div class="stat-name">${s.name}</div><div class="stat-value">${breakdown[s.id].clb}</div></div>`).join("")}
+        </div>
+        <p class="muted mt">Saved to your history on ${fmtDate(attempt.date)}.</p>
+        <div class="cta-row-single">
+          <a class="btn btn-primary" href="#/history">View Full History</a>
+          <a class="btn" href="#/dashboard">Back to Dashboard</a>
+        </div>
+      </div>
+    `));
+  }
+}
+// render() is called at the end of js/study.js, after every screen is registered.
