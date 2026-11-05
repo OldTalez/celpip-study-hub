@@ -53,7 +53,7 @@ const Storage = (() => {
 
   // Defaults first, then whatever was saved over the top (Object.assign merges them).
   function getSettings() {
-    const defaults = { targetCLB: 9, name: "", hoursPerWeek: 8, examDate: "", sessionMin: 75, speechToText: false, examRealism: false }; // speechToText: opt-in, sends audio to an online service; examRealism: hide highlighter, notes and flags in Practice
+    const defaults = { targetCLB: 9, name: "", hoursPerWeek: 8, examDate: "", sessionMin: 75, speechToText: false, examRealism: false, studyDays: [], studyTime: "" }; // studyDays: preferred weekdays (0 = Sunday ... 6 = Saturday); studyTime: preferred time "HH:MM" or "" (T-030); speechToText: opt-in, sends audio to an online service; examRealism: hide highlighter, notes and flags in Practice
     return Object.assign({}, defaults, read(SETTINGS_KEY, {}));
   }
   function saveSettings(settings) { write(SETTINGS_KEY, settings); }
@@ -64,7 +64,8 @@ const Storage = (() => {
     partStats: "celpip_partstats_v1", // right/total per skill and part, for the weak-spot view
     vocab: "celpip_vocab_v1",         // word cards: box (how well known) and the next due date
     grammar: "celpip_grammar_v1",     // best score per grammar topic
-    log: "celpip_log_v1"              // the study log: date, minutes, skill, notes
+    log: "celpip_log_v1",             // the study log: date, minutes, skill, notes
+    studyTime: "celpip_studytime_v1"  // minutes studied: { days: { "2026-11-05": { reading: 12.5, general: 20 } }, manual: [ added-by-hand entries ] } (T-030)
   };
   function get(name, fallback) { return read(KEYS[name], fallback); }
   function set(name, value) { return write(KEYS[name], value); }
@@ -97,12 +98,19 @@ const Storage = (() => {
     }
     return out;
   }
+  // LEARNING NOTE (T-030): the new settings are checked the same way. Preferred days must be whole numbers 0 to 6 (kept once each),
+  // the preferred time must look like "07:30", the test date must look like "2026-12-01", and the switches must be true or false.
   function cleanSettings(st) {
     const out = Object.assign({}, st);
     delete out.apiKey;
     if (out.targetCLB !== undefined) out.targetCLB = num(out.targetCLB, 4, 12, 9);
     if (out.hoursPerWeek !== undefined) out.hoursPerWeek = num(out.hoursPerWeek, 2, 30, 8);
     if (out.sessionMin !== undefined) out.sessionMin = num(out.sessionMin, 20, 240, 75);
+    if (out.name !== undefined) out.name = typeof out.name === "string" ? out.name.slice(0, 60) : "";
+    if (out.examDate !== undefined) out.examDate = /^\d{4}-\d{2}-\d{2}$/.test(String(out.examDate)) && !isNaN(new Date(out.examDate + "T12:00:00")) ? out.examDate : "";
+    if (out.studyDays !== undefined) out.studyDays = Array.isArray(out.studyDays) ? Array.from(new Set(out.studyDays.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))) : [];
+    if (out.studyTime !== undefined) out.studyTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(out.studyTime)) ? out.studyTime : "";
+    ["speechToText", "examRealism"].forEach(k => { if (out[k] !== undefined) out[k] = out[k] === true; });
     return out;
   }
   // The other stores (turn C, after Inyene's review): each is rebuilt entry by entry from known shapes. An entry that does not
@@ -138,7 +146,34 @@ const Storage = (() => {
       return { id: e.id, date: e.date, minutes: num(e.minutes, 0, 1000, 0), skill: text(e.skill).slice(0, 40), learned: text(e.learned), unclear: text(e.unclear), next: text(e.next) };
     }).filter(Boolean);
   }
-  const CLEANERS = { partStats: cleanPartStats, mistakes: cleanMistakes, vocab: cleanVocab, grammar: cleanGrammar, log: cleanLog };
+  // Study time (T-030). "days" maps a date to minutes per skill ("general" = review, words, grammar, exam); "manual" lists the entries
+  // typed in by hand, with an optional note of at most 140 characters. Every number is clamped; every date and id must match its pattern.
+  const TIME_KEYS = SKILL_IDS.concat("general");
+  const mins = (v, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(0, Math.round(n * 10) / 10)) : null; };
+  function cleanStudyTime(src) {
+    const out = { days: {}, manual: [] };
+    if (!isObj(src)) return out;
+    if (isObj(src.days)) {
+      for (const d of Object.keys(src.days)) {
+        const row = src.days[d];
+        if (!DAY.test(d) || !isObj(row)) { skipped++; continue; }
+        const clean = {};
+        TIME_KEYS.forEach(k => { const m = mins(row[k], 1440); if (m) clean[k] = m; });
+        out.days[d] = clean;
+      }
+      // Keep only the newest 400 days, as the app itself does (MAX_TIME_DAYS in study.js), so a crafted file cannot fill storage.
+      Object.keys(out.days).sort().slice(0, Math.max(0, Object.keys(out.days).length - 400)).forEach(d => { delete out.days[d]; });
+    }
+    if (Array.isArray(src.manual)) {
+      src.manual.slice(0, 500).forEach(e => {
+        const m = isObj(e) ? mins(e.minutes, 600) : null;
+        if (!isObj(e) || !/^m_\d{1,16}$/.test(String(e.id)) || !DAY.test(String(e.date)) || !TIME_KEYS.includes(e.skill) || !m) { skipped++; return; }
+        out.manual.push({ id: e.id, date: e.date, skill: e.skill, minutes: m, note: typeof e.note === "string" ? e.note.slice(0, 140) : "" });
+      });
+    }
+    return out;
+  }
+  const CLEANERS = { partStats: cleanPartStats, mistakes: cleanMistakes, vocab: cleanVocab, grammar: cleanGrammar, log: cleanLog, studyTime: cleanStudyTime };
   function importAll(obj) {
     skipped = 0;
     if (!obj || typeof obj !== "object") return false;
@@ -153,6 +188,7 @@ const Storage = (() => {
       localStorage.removeItem(HISTORY_KEY);
       localStorage.removeItem(SETTINGS_KEY);
       Object.values(KEYS).forEach(k => localStorage.removeItem(k));
+      localStorage.removeItem("celpip_checkin_v1"); // the check-in dismissal date (study.js). Kept out of KEYS on purpose: KEYS are exported and imported, and this date is not data to carry over.
     } catch (e) {}
   }
 

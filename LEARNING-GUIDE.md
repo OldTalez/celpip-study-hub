@@ -10,7 +10,7 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 
 ## How it works, end to end
 1. `index.html` is the only page. It has a left menu (wide screens), a top bar and bottom tab bar (phones), a footer and an empty area called `app`. Before anything draws, a tiny script sets the light or dark theme.
-2. The scripts at the bottom load in a fixed order: data files, then `shell.js`, `storage.js`, `scoring.js`, `app.js`, and last `study.js`. Order matters because each file uses names defined by the ones before it.
+2. The scripts at the bottom load in a fixed order: data files, then `shell.js`, `storage.js`, `prescription.js`, `calendar.js`, `scoring.js`, `app.js`, and last `study.js`. Order matters because each file uses names defined by the ones before it.
 3. `app.js` is the engine: timers, speech, the microphone, the router, the multiple-choice practice, the writing and speaking runners, and the full exam.
 4. `study.js` registers the screens (dashboard, learn, review, words, grammar, notes, plan, history, settings) and adds the study tools. At the very end it calls `render()`, which draws the screen for the current address.
 5. The address after the `#` picks the screen (for example `#/review`). This is a "router". Click a link, the address changes, `render()` swaps the screen.
@@ -27,6 +27,8 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 | `fonts/` | The two bundled font families as small Latin-only WOFF2 files, with their licence (`OFL.txt`) |
 | `js/app.js` | Engine: timers, speech, recording, router, practice runs, timed section, exam |
 | `js/study.js` | The study screens and the `Study` helper (explanations, mistakes, model answers) |
+| `js/calendar.js` | Builds the `.ics` calendar file from the plan: escaping, line folding, weekly repeats and reminders. Pure text in, text out |
+| `js/prescription.js` | The "My plan" engine: pure functions (no page, no storage) that split the week, pick today's tasks, project a range and list milestones |
 | `js/storage.js` | Saving and loading history, settings and study data; converts a percentage to an estimated level |
 | `js/scoring.js` | Scores writing and speaking text with simple maths (no network) |
 | `js/data/*.js` | The original practice content (78 listening and 52 reading passages, 34 writing prompts, 72 speaking prompts) |
@@ -75,6 +77,28 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 - **Mastery grid** (`masteryTile`): percent right per part, from the same `partStats` the weak spots use. Each cell is a button that starts that part. Shading is capped so text stays readable, and the number is always printed.
 - **Toolbar and toasts:** the passage bar now has "Highlight selection" and "Clear highlights"; a toast left over from the screen before is cleared on each screen change (`Toast.clear`, called by `render()`).
 
+## My plan (added 2026-11-05, T-030 turn 1, `js/prescription.js` and `js/study.js`)
+
+The old Plan page became "My plan" (the address is still `#/plan`). It answers: how much should I study this week, on which days, on what, and what can I reasonably reach?
+
+- **Pure functions.** `js/prescription.js` takes plain data in (settings, latest level per skill, study-time log, today's date) and gives plain data out. It never touches the page or storage, so the test can call it with fixed inputs. `js/study.js` does the drawing.
+- **Where every number comes from.** The constants at the top of `prescription.js` each name their source: the evidence note `Knowledge/Research/2026-11-05 celpip-study-prescription-evidence.md`, the official score chart (celpip.ca, supplied by the Board), or "guide" (a number chosen for this app). Most are low confidence, and the page says so.
+- **Ranges, never promises.** The projection shows a range from 50 to 150 hours per level step (about 70 in the middle), labelled "Planning estimate, not official". If scores or the test date are missing, it says what is missing and does not guess.
+- **Split of the week.** Each skill's weight is its gap to your target plus 0.5; the weakest skill gets the most, and nobody falls below 10%.
+- **Study time.** The app counts time by itself every 5 seconds while the tab is showing, you touched the page in the last 2 minutes, and you are on a practice, exam, review, words, grammar or learn screen. You can also add time by hand (with an optional note that is shown as plain text). It is saved under `studyTime`.
+- **Your days.** Settings holds the days and time of day you chose. The weekly rhythm is laid on those days.
+
+Words to know: *retrieval* (answering questions from memory, which research rates highly) and *spacing* (reviewing at growing gaps).
+
+## My plan, part 2 (added 2026-11-05, T-030 turn 2)
+
+- **Projection fix.** Hours come from the largest single-skill gap, not the sum over four skills. The hours-per-level figure is about overall proficiency, so adding four gaps counted the same hours four times. Study time is shared across skills (`skillShares`); it is not added up.
+- **On track.** `Prescription.onTrack` compares minutes done with the minutes of sessions planned BEFORE today (today is still open). 80% or more is on track, 50% to 80% a little behind, under 50% behind. These thresholds are "guide" numbers, named at the top of the file.
+- **Check-in.** `Prescription.checkIn` counts planned days since the learner last studied. One means "your streak is safe"; two or more means the streak count restarts and a catch-up of at most +25% a day over at most 3 sessions is offered. The banner can be dismissed for today (one date in `localStorage`, key `celpip_checkin_v1`). Wording never blames.
+- **Calendar file.** `js/calendar.js` writes iCalendar (RFC 5545) text. Floating times have no time zone; text values are escaped so typed text can never add a line; lines are folded at 75 bytes; each event has a reminder 10 minutes before. The file is made in the browser and only downloaded: nothing is sent.
+- **Home.** The first screen is now called Home (one constant, `HOME_LABEL`; the route is still `#/dashboard`). Its "My plan" card is a heading link stretched over the whole card (`.card-link::after`), so one click opens the plan without putting buttons inside a link.
+- **Glossary additions:** *floating time* (a clock time with no zone), *RRULE* (the repeat rule in a calendar event), *VALARM* (a reminder inside an event), *line folding* (cutting long lines so none passes 75 bytes).
+
 ## What changed from version 1
 - Removed the optional AI grading. It sent your text to a cloud service with a key kept in plain text in the browser. Version 2 also deletes any key an older version saved. Writing and speaking now use only the local scoring and a self-rating.
 - Removed the Chart.js dependency (it was loaded from the internet).
@@ -86,7 +110,9 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 All new material was written by AI assistants on 2026-10-22, in the style of the test, and has not been reviewed by a person. Answer explanations flag 7 questions as "check this answer key". Speaking phrase lists and delivery tips repeat by task type rather than being unique per prompt. Treat the material as practice, not as authority.
 
 ## Glossary
-- **Router**: code that shows a different screen depending on the text after the `#` in the address.
+
+- **Pure function:** a function that only turns inputs into an output and changes nothing else (see `js/prescription.js`).
+- **Tick:** one 5-second check of whether you are studying, used to count study time.- **Router**: code that shows a different screen depending on the text after the `#` in the address.
 - **localStorage**: a small box of text the browser keeps for this site.
 - **JSON**: a plain text way to write lists and records, used for saving and for the data files.
 - **IIFE**: a function that runs as soon as it is defined; used to keep names private.

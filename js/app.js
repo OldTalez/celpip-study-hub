@@ -1203,7 +1203,7 @@ function startFullExam() {
         <p class="muted mt">Saved to your history on ${fmtDate(attempt.date)}.</p>
         <div class="cta-row-single">
           <a class="btn btn-primary" href="#/history">View Full History</a>
-          <a class="btn" href="#/dashboard">Back to Dashboard</a>
+          <a class="btn" href="#/dashboard">Back to Home</a>
         </div>
       </div>
     `));

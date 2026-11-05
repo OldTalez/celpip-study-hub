@@ -2,7 +2,7 @@
 <!--
   LEARNING NOTE (for beginners):
   This is the one and only page of the app. It holds the header, a footer and an empty main area
-  (id "app"). The scripts at the bottom fill that area with the Dashboard, Learn, Practice and other screens.
+  (id "app"). The scripts at the bottom fill that area with Home, Learn, Practice and other screens.
   Order matters: the question data files load first, then the generated study material (js/data/new/),
   then shell.js (the frame: menus, theme switch, focus mode; it needs only the page itself), storage.js, scoring.js, app.js (the practice and exam engines) and finally study.js (the screens
   and study tools). Open this file in a browser to run the app; there is no server and no install step.
@@ -46,7 +46,7 @@
 <body>
   <!-- Icon sprite: small line drawings drawn once and reused with <use>. They take the text colour. Hidden from screen readers. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
-    <symbol id="i-dashboard" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z"/></symbol>
+    <symbol id="i-dashboard" viewBox="0 0 24 24"><path d="M3.5 11.5L12 4l8.5 7.5M5.5 10v10h4.5v-6h4v6h4.5V10"/></symbol>
     <symbol id="i-learn" viewBox="0 0 24 24"><path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/></symbol>
     <symbol id="i-practice" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></symbol>
     <symbol id="i-review" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 4v5h-5M20 12a8 8 0 0 1-14 5l-2-2M4 20v-5h5"/></symbol>
@@ -71,14 +71,14 @@
   <aside class="sidebar" id="sidebar">
     <div class="side-head"><button class="icon-btn menu-btn" type="button" data-menu-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Hide menu" title="Hide menu" id="menuBtn"><svg class="ico-svg" aria-hidden="true"><use href="#i-menu"/></svg></button><div class="brand">CELPIP<br>Study Hub</div></div>
     <nav id="mainNav" aria-label="Main">
-      <a href="#/dashboard" data-section="dashboard"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg>Dashboard</a>
+      <a href="#/dashboard" data-section="dashboard"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg>Home</a>
       <a href="#/learn" data-section="learn"><svg class="nav-ico" aria-hidden="true"><use href="#i-learn"/></svg>Learn</a>
       <a href="#/practice" data-section="practice"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg>Practice</a>
       <a href="#/review" data-section="review"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg>Review</a>
       <a href="#/vocab" data-section="vocab"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words</a>
       <a href="#/grammar" data-section="grammar"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar</a>
       <a href="#/notes" data-section="notes"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes</a>
-      <a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>Plan</a>
+      <a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>My plan</a>
       <a href="#/exam" data-section="exam"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg>Timed Exam</a>
       <a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a>
       <a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a>
@@ -114,7 +114,7 @@
 
   <!-- Phones: bottom tab bar. More opens a sheet with the other seven pages. -->
   <nav class="tabbar" id="tabBar" aria-label="Sections">
-    <a href="#/dashboard" data-section="dashboard"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg></span>Dashboard</a>
+    <a href="#/dashboard" data-section="dashboard"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-dashboard"/></svg></span>Home</a>
     <a href="#/practice" data-section="practice"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-practice"/></svg></span>Practice</a>
     <a href="#/review" data-section="review"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-review"/></svg></span>Review</a>
     <a href="#/exam" data-section="exam"><span class="pill"><svg class="nav-ico" aria-hidden="true"><use href="#i-exam"/></svg></span>Exam</a>
@@ -128,7 +128,7 @@
       <li><a href="#/vocab" data-section="vocab"><svg class="nav-ico" aria-hidden="true"><use href="#i-vocab"/></svg>Words</a></li>
       <li><a href="#/grammar" data-section="grammar"><svg class="nav-ico" aria-hidden="true"><use href="#i-grammar"/></svg>Grammar</a></li>
       <li><a href="#/notes" data-section="notes"><svg class="nav-ico" aria-hidden="true"><use href="#i-notes"/></svg>Notes</a></li>
-      <li><a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>Plan</a></li>
+      <li><a href="#/plan" data-section="plan"><svg class="nav-ico" aria-hidden="true"><use href="#i-plan"/></svg>My plan</a></li>
       <li><a href="#/history" data-section="history"><svg class="nav-ico" aria-hidden="true"><use href="#i-history"/></svg>History</a></li>
       <li><a href="#/settings" data-section="settings"><svg class="nav-ico" aria-hidden="true"><use href="#i-settings"/></svg>Settings</a></li>
     </ul>
@@ -167,6 +167,8 @@
   <script src="js/data/new/lessons.js"></script>
   <script src="js/shell.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/prescription.js"></script>
+  <script src="js/calendar.js"></script>
   <script src="js/scoring.js"></script>
   <script src="js/tools.js"></script>
   <script src="js/app.js"></script>

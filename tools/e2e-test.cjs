@@ -14,12 +14,18 @@ Extended 2026-11-05 (Nsikak, T-029 turn A) with checks for the new frame: left m
 (and the More sheet listing seven pages), the Light / Dark / Auto theme switch (Auto follows the device live), focus mode
 (menus hidden, Exit asks first, in practice and in the exam), the contents list in Learn, no sideways scroll on a phone,
 and one run with motion switched on so the View Transitions code path is exercised.
+Extended 2026-11-05 (Nsikak, T-030 turn 2): projection from the largest single gap (not 4x), whole-number hours, the closed add-time form, on-track words,
+the check-in banner (rules, dismiss for today, never blame words), the .ics file (downloaded and parsed), the Home plan card (sample and empty data,
+click and Enter open My plan), and the Dashboard -> Home rename.
 Extended 2026-11-05 (Nsikak, T-029 turn B) with checks for the practice tools: question dots and the Flag button, time per
 question (saved on the attempt), the selection pop-up and notes (including a note made of HTML, which must show as plain
 text), "Practise like the real test" and the always-on exam rule, the Writing word bar, the Listening progress bar (with a
 stand-in voice that sends boundary events, and one that sends none), toasts, and the Add date button on a phone.
 Toasts last 3 seconds and this test makes time run 100 times faster, so a script logs every toast the moment it appears
 (window.__toasts) instead of the test racing the fade-out.
+Extended 2026-11-05 (Nsikak, T-030 turn 1) with checks for My plan: the prescription functions run in the page with fixed inputs, settings
+save and clamp, automatic study-time counting (pauses when hidden or idle), manual time with an HTML note shown as text, the import
+cleaners for studyTime and the new settings, and the page sections.
 */
 const {chromium}=require('playwright-core');
 const BASE=process.argv[2]||'http://localhost:8790/';const SHOTS=process.argv[3]||'';
@@ -145,7 +151,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await go('#/history');ok(await p.$$eval('.history-table tbody tr',r=>r.some(x=>/Full exam/.test(x.textContent))),'exam: saved in History')});
 
  await step('leaving the exam mid-audio',async()=>{await go('#/exam/run');await run(13000);await go('#/dashboard');await run(120000);await p.waitForTimeout(200);
-   const h=await txt('#app h1');ok(!/Exam|Listening/i.test(await txt('#app')||'').valueOf()||/desk|Hello/.test(h||''),'');ok(!(await p.$('.exam-banner')),'exam left mid-audio: dashboard not taken over by the exam');
+   const h=await txt('#app h1');ok(!/Exam|Listening/i.test(await txt('#app')||'').valueOf()||/Home|Hello/.test(h||''),'');ok(!(await p.$('.exam-banner')),'exam left mid-audio: dashboard not taken over by the exam');
    ok(await p.evaluate(()=>window.onbeforeunload===null),'exam left: leave warning switched off')});
 
  await step('leaving the exam while audio plays',async()=>{
@@ -166,7 +172,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await go('#/grammar');await p.click('#app a.card >> nth=0');await run(50);await p.click('#gf input >> nth=0');await p.click('#gCheck');ok(/correct/.test(await txt('#gScore')||''),'grammar: drill checked');
    await go('#/notes');await p.fill('#nLearn','Linking words');await p.click('#nf button[type=submit]');await run(50);ok(/Linking words/.test(await txt('#app')||''),'notes: saved');
    await p.click('[data-del]');await run(50);ok(/No notes yet/.test(await txt('#app')||''),'notes: deleted');
-   await go('#/plan');ok(/The week/.test(await txt('#app')||''),'plan: shown');
+   await go('#/plan');ok(/Your rhythm/.test(await txt('#app')||''),'plan: shown');
    await go('#/settings');await p.fill('#nameInput','Kenny');await p.fill('#examDateInput',new Date(Date.now()+50*864e5).toISOString().slice(0,10));await p.click('#saveSettings');await run(50);ok(/Hello, Kenny/.test(await txt('#app h1')||''),'settings: saved and dashboard greets');
    ok(/weeks to go/.test(await txt('#app')||''),'settings: test date gives a weeks-to-go countdown');await go('#/plan');ok(/week/.test(await txt('#app')||''),'plan: shows the countdown with a test date');
    await go('#/history');const n0=await p.$$eval('.history-table tbody tr',x=>x.length);await p.click('.history-table .btn-icon >> nth=0');await run(50);ok((await p.$$eval('.history-table tbody tr',x=>x.length))===n0-1,'history: delete one');
@@ -190,13 +196,13 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(await p.evaluate(()=>{const s=document.querySelector('.sidebar [data-theme-switch]').getBoundingClientRect(),m=document.querySelector('main#app').getBoundingClientRect();return s.right<=m.left+1}),'1100px: theme switch sits in the sidebar (no wrapped header row)');
    await p.setViewportSize({width:390,height:844});await go('#/dashboard');
    const labels=await p.$$eval('#tabBar a, #tabBar button',x=>x.map(e=>e.textContent.trim()));
-   ok(labels.join(',')==='Dashboard,Practice,Review,Exam,More','phone: tabs are '+labels.join(', '));
+   ok(labels.join(',')==='Home,Practice,Review,Exam,More','phone: tabs are '+labels.join(', '));
    ok(await p.$eval('#tabBar a[data-section=dashboard]',a=>a.getAttribute('aria-current'))==='page','phone: current tab has aria-current');
    ok(await p.$$eval('#tabBar a, #tabBar button',x=>x.every(e=>e.getBoundingClientRect().height>=56)),'phone: every tab is 56px or taller');
    await p.click('#moreBtn');await p.waitForTimeout(150);
    ok(await p.$eval('#moreSheet',d=>d.open),'phone: More opens the sheet');
    const more=await p.$$eval('#moreSheet .sheet-list a',x=>x.map(a=>a.textContent.trim()));
-   ok(more.join(',')==='Learn,Words,Grammar,Notes,Plan,History,Settings','More lists the 7 pages ('+more.join(', ')+')');
+   ok(more.join(',')==='Learn,Words,Grammar,Notes,My plan,History,Settings','More lists the 7 pages ('+more.join(', ')+')');
    await p.click('#moreSheet a[data-section=notes]');await p.waitForTimeout(250);
    ok(!(await p.$eval('#moreSheet',d=>d.open))&&await p.evaluate(()=>location.hash)==='#/notes','More: choosing Notes closes the sheet and opens Notes');
    ok(await p.$eval('#moreBtn',b=>b.getAttribute('aria-current'))==='page','More tab is marked current while on a More page');
@@ -633,6 +639,232 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await go('#/dashboard');
    ok(/no score/.test(await txt('.tile-radar')||'')&&!!(await p.$('.bento')),'import: the dashboard still renders and the radar shows no score (not 0) for the missing level');
    ok(!(await p.evaluate(()=>window.__pwn))&&await p.$$eval('img[src="x"]',i=>i.length)===0,'import: no script ran and no element was injected on any screen');
+   await p.evaluate(s=>{localStorage.clear();const o=JSON.parse(s);for(const k in o)localStorage.setItem(k,o[k])},snap)});
+
+ // T-030 turn 1: My plan
+ await step('my plan: engine, settings, time tracking, page',async()=>{
+   const snap=await p.evaluate(()=>JSON.stringify(Object.assign({},localStorage)));
+   await p.evaluate(()=>{localStorage.clear()});
+   // nav label
+   await p.setViewportSize({width:1280,height:900});await go('#/dashboard');
+   ok(/^\s*My plan\s*$/.test(await p.$eval('#sidebar a[data-section="plan"]',e=>e.textContent).catch(()=>'')||''),'nav: the Plan link now reads "My plan"');
+   // engine, with fixed inputs
+   const E=await p.evaluate(()=>{const P=Prescription;const out={};
+     const sh=P.skillShares({listening:9,reading:9,writing:9,speaking:5},9);out.sh=sh.shares;
+     out.eq=P.skillShares({},9);out.miss=P.skillShares({listening:7,reading:8,writing:6,speaking:null},9).missing;
+     out.w10=P.weeklyMinutes({hoursPerWeek:10});out.w4=P.schedule({hoursPerWeek:4,studyDays:[1,3,5]},sh.shares);
+     out.bad=P.cleanDays([1,'x',9,1.5,1,0,-1]);
+     const t=new Date();const iso=n=>{const d=new Date(t.getTime()+n*864e5);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+     const today=iso(0);const L7={listening:7,reading:7,writing:7,speaking:7};
+     out.pr=P.projection({targetCLB:9,hoursPerWeek:8,examDate:iso(70)},L7,today);
+     out.prShort=P.projection({targetCLB:9,hoursPerWeek:2,examDate:iso(21)},L7,today);
+     out.prMore=P.projection({targetCLB:9,hoursPerWeek:16,examDate:iso(70)},L7,today);
+     out.noScore=P.projection({targetCLB:9,hoursPerWeek:8,examDate:iso(70)},{},today);
+     out.noDate=P.projection({targetCLB:9,hoursPerWeek:8},L7,today);
+     const sched=P.schedule({hoursPerWeek:8,studyDays:[0,1,2,3,4,5,6]},P.skillShares(L7,9).shares);
+     const tpl=s=>[{min:40,text:'Q',href:'#/practice/'+s},{min:10,text:'V',href:'#/vocab'},{min:20,text:'N',href:'#/notes'},{min:20,text:'D',href:'#/dashboard'}];
+     out.today=P.todayTasks(sched,today,{reading:tpl('reading'),listening:tpl('listening'),writing:tpl('writing'),speaking:tpl('speaking')});
+     out.rev=[P.reviewSpacing(100).nextReviewDays,P.reviewSpacing(3).nextReviewDays,P.reviewSpacing(1000).nextReviewDays];
+     out.mock=[P.mockPlan(today,iso(10),iso(-3),true).kind,P.mockPlan(today,iso(1),null,true).kind,P.mockPlan(today,iso(10),null,false).kind,P.mockPlan(today,iso(10),iso(-3),true).dueInDays];
+     return out});
+   const sum=Object.values(E.sh).reduce((a,b)=>a+b,0);
+   ok(Math.abs(sum-1)<1e-9&&E.sh.speaking>E.sh.reading&&Math.min(...Object.values(E.sh))>=0.1-1e-9,'engine: shares add to 1, the weakest skill gets most, nobody under the 10% floor ('+JSON.stringify(E.sh)+')');
+   ok(E.eq.equal&&E.miss.join()==='speaking','engine: no scores gives an equal split; a missing skill is named');
+   ok(E.w10===600&&E.w4.weeklyMin===240&&E.w4.sessionMin===80&&E.w4.days.length===3,'engine: hoursPerWeek is used (10 h = 600 min; 4 h over 3 days = 80 min sessions)');
+   ok(E.bad.join()==='1,0','engine: bad study days are dropped ('+E.bad+')');
+   ok(E.pr.hoursNeeded.join()==='100,300'&&E.pr.projected.low<=E.pr.projected.high&&/not official/i.test(E.pr.label),'engine: projection is a range from 50 to 150 hours a step (largest single gap of 2 steps -> '+E.pr.hoursNeeded+'), labelled "not official"');
+   ok(E.pr.neededPerWeek&&E.pr.neededPerWeek[0]<E.pr.neededPerWeek[1]&&E.prMore.projected.high>=E.pr.projected.high,'engine: hours-a-week needed is a range, and more hours never lowers the projection');
+   ok(E.prShort.timeStatus==='short'&&E.prShort.messages.some(m=>/short/.test(m)),'engine: flags a test date too close for the gap');
+   ok(E.noScore.missing.includes('scores')&&E.noScore.messages.some(m=>/No scores/.test(m))&&!E.noScore.projected,'engine: no scores says what is missing, no guess');
+   ok(E.noDate.missing.includes('test date')&&E.noDate.messages.some(m=>/No test date/.test(m))&&!E.noDate.projected&&E.noDate.hoursNeeded.length===2,'engine: no test date says so and gives no projection');
+   ok(E.today.isStudyDay&&E.today.retrievalShare>=60,'engine: today\'s tasks keep at least 60% retrieval ('+E.today.retrievalShare+'%)');
+   ok(E.rev.join()==='14,1,14'&&E.mock.slice(0,3).join()==='mock,none,diagnostic'&&E.mock[3]===4,'engine: review gap clamps 1 to 14 days; mock cadence (every 14 days, none in the last 2, diagnostic first) ('+E.rev+' / '+E.mock+')');
+   // settings: save and clamp
+   await go('#/settings');await p.check('input[name="studyDay"][value="1"]');await p.check('input[name="studyDay"][value="3"]');await p.fill('#studyTimeInput','07:30');await p.fill('#sessionInput','9999');await p.click('#saveSettings');await run(50);
+   let st=await p.evaluate(()=>Storage.getSettings());
+   ok(st.studyDays.join()==='1,3'&&st.studyTime==='07:30'&&st.sessionMin===240,'settings: study days and time saved; a session of 9999 minutes is clamped to 240 ('+st.studyDays+' '+st.studyTime+' '+st.sessionMin+')');
+   await go('#/settings');ok(await p.isChecked('input[name="studyDay"][value="3"]')&&!(await p.isChecked('input[name="studyDay"][value="2"]')),'settings: the saved days show ticked again');
+   // seed sample results so the page has scores, then draw it
+   await p.evaluate(()=>{const d=n=>new Date(Date.now()-n*864e5).toISOString();Storage.saveSettings({...Storage.getSettings(),hoursPerWeek:8,targetCLB:9,examDate:new Date(Date.now()+60*864e5).toISOString().slice(0,10)});
+     localStorage.setItem('celpip_history_v1',JSON.stringify([{id:'a_1730000000001_aaa111',type:'practice',skill:'reading',mode:'mcq-timed',pct:85,clb:8,date:d(1)},{id:'a_1730000000002_aaa112',type:'practice',skill:'listening',pct:62,clb:7,date:d(2)},{id:'a_1730000000003_aaa113',type:'practice',skill:'writing',mode:'writing',clb:6,date:d(0)}]));
+     Storage.set('partStats',{'listening|1':{right:9,total:10},'listening|2':{right:3,total:10}})});
+   await go('#/plan');const pg=await txt('#app')||'';
+   ok(['This week','Today','Projection','Milestones','Your rhythm'].every(h=>new RegExp(h).test(pg)),'my plan: all five sections render');
+   ok(/Planning estimate, not official/.test(pg)&&/hours a week/.test(pg)&&/CLB \d/.test(pg),'my plan: the projection shows ranges and the "not official" label');
+   ok(/Listening part 1: 75% or better/.test(pg)&&/Done/.test(pg)&&/Not yet/.test(pg),'my plan: milestones show progress from history and part stats');
+   ok(/Speaking has no score yet/.test(pg),'my plan: the unscored skill is named, not guessed');
+   ok((await p.$$eval('#app h1',h=>h.map(x=>x.textContent).join()))==='My plan','my plan: page title is "My plan"');
+   // manual time and an HTML note
+   await p.evaluate(()=>{window.__pwn=0;window.alert=()=>{window.__pwn=1}});
+   await p.click('#addTimeDetails summary');await p.fill('#addMin','25');await p.selectOption('#addSkill','general');await p.fill('#addNote','<img src=x onerror=alert(1)>');await p.click('#addTimeBtn');await p.waitForTimeout(250);
+   const lt=await txt('#manualList')||'';
+   ok(lt.includes('<img src=x onerror=alert(1)>')&&(await p.$$eval('#app img',i=>i.length))===0&&!(await p.evaluate(()=>window.__pwn)),'manual time: an HTML note shows as plain text and does not run');
+   let td=await p.evaluate(()=>Storage.get('studyTime',null));const tday=await p.evaluate(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')});
+   ok(td.days[tday].general>=25&&td.manual.length===1,'manual time: 25 minutes stored for today under General');
+   await p.click('#addTimeDetails summary');await p.evaluate(()=>{document.getElementById('addTimeForm').noValidate=true});await p.fill('#addMin','0');await p.click('#addTimeBtn');await p.waitForTimeout(100);
+   ok(/whole number from 1 to 600/.test(await txt('#addTimeMsg')||'')&&(await p.evaluate(()=>Storage.get('studyTime',null).manual.length))===1,'manual time: 0 minutes is refused with a message');
+   await p.fill('#addMin','10');await p.fill('#addNote','x'.repeat(300));await p.click('#addTimeBtn');await p.waitForTimeout(250);
+   td=await p.evaluate(()=>Storage.get('studyTime',null));
+   ok(td.manual.length===2&&td.manual.every(e=>e.note.length<=140),'manual time: a 300-character note is cut to 140');
+   // automatic counting
+   await p.evaluate(()=>localStorage.removeItem('celpip_studytime_v1'));await p.mouse.move(10,10);await p.mouse.move(40,40);
+   await go('#/practice/reading');await p.mouse.move(60,60);await p.waitForTimeout(700);await p.mouse.move(20,20);await p.waitForTimeout(300);
+   const auto=await p.evaluate(()=>{const t=Storage.get('studyTime',null);const d=t&&Object.values(t.days)[0];return d&&d.reading||0});
+   ok(auto>0,'auto time: minutes counted on a practice screen ('+auto+' min, ticks run fast in this test)');
+   const gate=await p.evaluate(()=>{const T=Study.tracker;T.noteActivity();const n=Date.now();const r={};
+     r.idle=T.tick(n+T.IDLE_MS+60000,false);r.hidden=T.tick(n,true);r.active=T.tick(n,false);r.skill=[T.skillFor('practice/writing'),T.skillFor('review'),T.skillFor('settings'),T.skillFor('learn/listening/x')];return r});
+   ok(gate.idle===false&&gate.hidden===false&&gate.active===true,'auto time: nothing counted when idle for over 2 minutes or when the tab is hidden');
+   ok(gate.skill.join()==='writing,general,,listening','auto time: screens map to skills');
+   await go('#/settings');const before=await p.evaluate(()=>JSON.stringify(Storage.get('studyTime',null)));await p.mouse.move(100,100);await p.waitForTimeout(400);
+   ok(before===await p.evaluate(()=>JSON.stringify(Storage.get('studyTime',null))),'auto time: nothing counted on the Settings screen');
+   // import cleaner
+   const X='"><img src=x onerror=window.__pwn=1>';
+   const bad={settings:{studyDays:[1,'x',9,1.5,1,3],studyTime:'<b>07:30</b>',examDate:X,name:'A'.repeat(200),targetCLB:9},
+     studyTime:{days:{'2026-11-01':{reading:'20',general:99999,[X]:5},[X]:{reading:5},'2026-11-02':'x'},manual:[{id:'m_1730000000000',date:'2026-11-01',skill:'reading',minutes:'15',note:X+'y'.repeat(300)},{id:X,date:'2026-11-01',skill:'reading',minutes:5},{id:'m_2',date:'2026-11-01',skill:X,minutes:5},{id:'m_3',date:'2026-11-01',skill:'reading',minutes:-4}]}};
+   await p.evaluate(()=>{window.__pwn=0});await go('#/settings');
+   await p.setInputFiles('#importFile',{name:'crafted3.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bad))});await p.waitForTimeout(300);
+   const im=await p.evaluate(()=>({s:Storage.getSettings(),t:Storage.get('studyTime',null)}));
+   ok(im.s.studyDays.join()==='1,3'&&im.s.studyTime===''&&im.s.examDate===''&&im.s.name.length===60,'import: bad study days, time, test date and an over-long name are cleaned ('+im.s.studyDays+')');
+   ok(Object.keys(im.t.days).join()==='2026-11-01'&&im.t.days['2026-11-01'].reading===20&&im.t.days['2026-11-01'].general===1440&&Object.keys(im.t.days['2026-11-01']).length===2,'import: studyTime days keep only valid dates, known skills, clamped minutes');
+   ok(im.t.manual.length===1&&im.t.manual[0].minutes===15&&im.t.manual[0].note.length===140,'import: studyTime manual entries keep only well-formed ones, note cut to 140');
+   ok(await p.evaluate(()=>'studyTime' in Storage.exportAll()),'export: the backup includes studyTime');
+   for(const r of ['#/plan','#/settings','#/dashboard'])await go(r);
+   ok(!(await p.evaluate(()=>window.__pwn))&&await p.$$eval('img[src="x"]',i=>i.length)===0,'import: no script ran and no element injected on My plan, Settings or Dashboard');
+   await p.evaluate(s=>{localStorage.clear();const o=JSON.parse(s);for(const k in o)localStorage.setItem(k,o[k])},snap)});
+
+ // T-030 turn 2: on-track, check-in, calendar file, Home card
+ await step('my plan turn 2: engine',async()=>{
+   await p.setViewportSize({width:1280,height:900});await go('#/dashboard');
+   const E=await p.evaluate(()=>{const P=Prescription,o={};
+     const eq=P.skillShares({},9).shares;const sched=P.schedule({hoursPerWeek:6,studyDays:[1,3,5]},eq);o.sess=sched.sessionMin;
+     const dn=t=>({listening:0,reading:0,writing:0,speaking:0,general:0,total:t});
+     o.t240=P.onTrack(sched,eq,dn(240),'2026-11-05').overall;o.t150=P.onTrack(sched,eq,dn(150),'2026-11-05').overall;o.t60=P.onTrack(sched,eq,dn(60),'2026-11-05').overall;o.mon=P.onTrack(sched,eq,dn(0),'2026-11-02').overall;
+     o.sk=P.onTrack(sched,eq,Object.assign(dn(0),{reading:60}),'2026-11-05').skills;
+     const L7={listening:7,reading:7,writing:7,speaking:7};
+     o.p7=P.projection({targetCLB:9,hoursPerWeek:8,examDate:'2027-01-14'},L7,'2026-11-05');
+     o.pU=P.projection({targetCLB:9,hoursPerWeek:8,examDate:'2027-01-14'},{listening:7,reading:8,writing:6,speaking:7},'2026-11-05');
+     o.nice=[P.niceHours(44.4),P.niceHours(0.44),P.niceHours(133.3)];
+     const ch=(days,studied,first)=>P.checkIn(P.schedule({hoursPerWeek:6,studyDays:days},eq),new Set(studied),'2026-11-05',first);
+     o.many=ch([1,3,5],['2026-10-28'],'2026-10-28');o.one=ch([1,3,5],['2026-11-02'],'2026-10-20');o.none=ch([1,3,5],['2026-11-04'],'2026-10-20');o.never=ch([1,3,5],[],null);o.unchosen=ch([],['2026-10-28'],'2026-10-28');
+     o.nx=[P.nextSession(sched,'07:30',new Date(2026,10,5,8,0)),P.nextSession(P.schedule({hoursPerWeek:6,studyDays:[4]},eq),'07:30',new Date(2026,10,5,8,0)),P.nextSession(P.schedule({hoursPerWeek:6,studyDays:[4]},eq),'09:00',new Date(2026,10,5,8,0))].map(x=>x&&x.daysAway);
+     return o});
+   ok(E.sess===120&&E.t240.status==='ontrack'&&E.t150.status==='little'&&E.t150.text==='A little behind: 90 min to catch up'&&E.t60.status==='behind'&&E.t60.text==='Behind: 180 min to catch up'&&E.mon.status==='ontrack'&&E.t240.text==='On track','on track: words by thresholds (80% / 50% of the minutes planned before today); Monday never reads behind ('+E.t150.text+' | '+E.t60.text+')');
+   ok(E.sk.reading.status==='ontrack'&&E.sk.writing.status==='behind'&&/min to catch up/.test(E.sk.writing.text),'on track: per skill ('+E.sk.reading.text+' | '+E.sk.writing.text+')');
+   ok(E.p7.hoursNeeded.join()==='100,300'&&E.p7.hoursNeeded[1]*3<=1200&&E.p7.hoursNeeded[1]<1200/3.5,'projection: turn-1 sample (all CLB 7, target 9) gives 100 to 300 hours, not the old 400 to 1200 (4x)');
+   ok(E.pU.stepsToTarget===3&&E.pU.hoursNeeded.join()==='150,450','projection: uneven levels use the largest single gap (3 steps -> 150 to 450 hours)');
+   ok([...E.p7.hoursNeeded,...E.p7.neededPerWeek,E.p7.availableHours,E.p7.weeksLeft,...E.pU.neededPerWeek].every(Number.isInteger)&&E.nice.join()==='44,0.4,133','projection: hours, hours a week and weeks are whole numbers (neededPerWeek '+E.p7.neededPerWeek+'); under 1 keeps one decimal');
+   ok(E.many.kind==='many'&&E.many.missed.length===3&&E.many.catchUp.length<=3&&E.many.catchUp.every(c=>c.extraMin<=30&&c.extraMin>0),'check-in: 2 or more missed days give a catch-up over at most 3 days, at most +25% a day (+30 of 120 min) ('+JSON.stringify(E.many.catchUp.map(c=>c.extraMin))+')');
+   ok(E.one.kind==='one'&&E.one.missed.length===1&&E.one.catchUp.length===0&&E.none.kind==='none'&&E.never.kind==='none'&&E.unchosen.kind==='none','check-in: one missed day keeps the streak (no catch-up); nothing missed, never studied, or no chosen days gives no banner');
+   ok(E.nx.join()==='1,7,0','next session: skips a time that has passed today ('+E.nx+')');
+   const C=await p.evaluate(()=>{const o={};o.esc=CalendarExport.escapeText('a,b;c\\d\ne');
+     const long='SUMMARY:'+'é'.repeat(60)+'x'.repeat(100);const f=CalendarExport.foldLine(long);o.fold=f.split('\r\n').every(l=>new TextEncoder().encode(l).length<=75);o.unfold=f.replace(/\r\n /g,'')===long;
+     const sched=Prescription.schedule({hoursPerWeek:6,studyDays:[1]},Prescription.skillShares({},9).shares);
+     const r=CalendarExport.buildIcs({sched,settings:{studyTime:'',examDate:''},today:'2026-11-05',now:new Date(2026,10,5,8,0),focusName:()=>'A,B;C\nINJECT:1',tasksFor:()=>[]});
+     o.r=r;return o});
+   ok(C.esc==='a\\,b\\;c\\\\d\\ne'&&C.fold&&C.unfold,'ics: commas, semicolons, backslashes and new lines are escaped; folding keeps every line at 75 octets or less without cutting a character');
+   ok(C.r.ok&&C.r.untilDay==='2027-01-28'&&C.r.usedDefaultTime&&C.r.time==='18:00'&&/SUMMARY:CELPIP study: A\\,B\\;C\\nINJECT:1\r\n/.test(C.r.text)&&!/\r\nINJECT:1/.test(C.r.text),'ics: no test date repeats for 12 weeks; no time uses 18:00; a focus name with a line break cannot add a line to the file');
+ });
+ await step('my plan turn 2: Home card, check-in, plan page, calendar download',async()=>{
+   const snap=await p.evaluate(()=>JSON.stringify(Object.assign({},localStorage)));
+   const fs=require('fs');
+   const seed=(withData)=>p.evaluate(wd=>{localStorage.clear();if(!wd)return;const d=n=>new Date(Date.now()-n*864e5).toISOString();
+     localStorage.setItem('celpip_settings_v1',JSON.stringify({targetCLB:9,hoursPerWeek:6,sessionMin:75,examDate:new Date(Date.now()+60*864e5).toISOString().slice(0,10),studyDays:[0,1,2,3,4,5,6],studyTime:'07:30',name:'Secret Name'}));
+     localStorage.setItem('celpip_history_v1',JSON.stringify(['listening','reading','writing','speaking'].map((k,i)=>({id:'a_17300000000'+i+'_aaa11'+i,type:'practice',skill:k,pct:70,clb:7,date:d(4)}))));
+     localStorage.setItem('celpip_studytime_v1',JSON.stringify({days:{},manual:[]}))},withData);
+   // empty data
+   await seed(false);await go('#/dashboard');
+   const em=await txt('.tile-plan')||'';
+   ok(/My plan/.test(em)&&/not set up yet/.test(em)&&await p.$('.tile-plan a[href="#/settings"]')!==null&&await p.$('.tile-plan a[href="#/diagnostic"]')!==null&&!(await p.$('.checkin')),'home card: empty data shows a set-up message that points to Settings and the diagnostic, with no check-in');
+   // sample data
+   await seed(true);await go('#/dashboard');
+   const hc=await txt('.tile-plan')||'';
+   ok(/This week:/.test(hc)&&/On track|A little behind|Behind/.test(hc)&&/Next session:/.test(hc)&&/Planning estimate, not official/.test(hc)&&/Not yet|Reading|Listening|Writing|Speaking/.test(hc)&&(await p.$$eval('.tile-plan li',l=>l.length))===2,'home card: minutes, on-track words, next session, projection label and two open milestones ('+hc.slice(0,120).replace(/\s+/g,' ')+')');
+   ok(/^\s*Home\s*$/.test(await p.$eval('#sidebar a[data-section="dashboard"]',e=>e.textContent))&&await p.$eval('#sidebar a[data-section="dashboard"] svg use',u=>u.getAttribute('href'))==='#i-dashboard'&&(await p.title()).startsWith('Home')&&(await txt('#app h1'))==='Hello, Secret Name','home: menu says Home with its icon; title says Home; heading greets by name');
+   const lk=await p.$eval('.tile-plan a.card-link',a=>({href:a.getAttribute('href'),inner:a.querySelectorAll('a,button,input,select,textarea,[tabindex]').length}));
+   ok(lk.href==='#/plan'&&lk.inner===0,'home card: the link goes to #/plan and holds no other interactive element');
+   const bx=await (await p.$('.tile-plan')).boundingBox();await p.mouse.click(bx.x+bx.width-24,bx.y+bx.height/2);await p.waitForTimeout(250);
+   ok(await p.evaluate(()=>location.hash)==='#/plan','home card: a click anywhere on the card opens My plan');
+   await go('#/dashboard');await p.focus('.tile-plan a.card-link');await p.keyboard.press('Enter');await p.waitForTimeout(250);
+   ok(await p.evaluate(()=>location.hash)==='#/plan','home card: Enter on the focused heading link opens My plan');
+   // check-in
+   const bn=await txt('.checkin')||'';
+   ok(/Welcome back/.test(bn)&&/streak count starts again/.test(bn)&&/\+\d+ min/.test(bn)&&!/fail|lazy|guilt|shame|should have|disappoint|bad |sorry|missed|slack|lost/i.test(bn),'check-in on My plan: gentle wording, reset message and a short catch-up, no blame words');
+   await go('#/dashboard');ok(!!(await p.$('.tile-plan .checkin'))&&!(await p.$('.checkin[role=alertdialog],[aria-modal=true]')),'check-in on Home: inside the card, not a modal');
+   await p.click('[data-checkin-dismiss]');await p.waitForTimeout(100);
+   const dis=await p.evaluate(()=>[localStorage.getItem('celpip_checkin_v1'),!!document.querySelector('.checkin')]);
+   ok(dis[0]&&/^\d{4}-\d{2}-\d{2}$/.test(dis[0])&&dis[1]===false,'check-in: dismiss hides it and remembers today');
+   await go('#/plan');ok(!(await p.$('.checkin')),'check-in: stays hidden on My plan for the rest of today');
+   await p.evaluate(()=>localStorage.setItem('celpip_checkin_v1','2000-01-01'));await go('#/plan');ok(!!(await p.$('.checkin')),'check-in: an old dismissal does not hide today\'s');
+   // one missed day: studied the day before yesterday
+   await p.evaluate(()=>{const n=Date.now();const id=(k)=>({id:'a_'+n+k+'_bbb22'+k,type:'practice',skill:'reading',pct:70,clb:7,date:new Date(n-2*864e5).toISOString()});const h=JSON.parse(localStorage.getItem('celpip_history_v1'));h.push(id(1));localStorage.setItem('celpip_history_v1',JSON.stringify(h));localStorage.removeItem('celpip_checkin_v1')});
+   await go('#/plan');const one=await txt('.checkin')||'';
+   ok(/streak is safe/.test(one)&&!/\+\d+ min/.test(one),'check-in: one missed day says the streak is safe, no catch-up');
+   // plan page: status, closed form, manual list visible
+   await p.evaluate(()=>{const t=JSON.parse(localStorage.getItem('celpip_studytime_v1'));const d=new Date().toISOString().slice(0,10);t.manual=[{id:'m_1730000000001',date:d,skill:'general',minutes:20,note:'SECRET-NOTE, x;y'}];t.days[d]={general:20};localStorage.setItem('celpip_studytime_v1',JSON.stringify(t))});
+   await go('#/plan');
+   ok((await p.$$eval('#planWeek ~ .card .status, .plan-row .status',x=>x.length))>=5,'my plan: on-track words with an icon for the week and for each skill');
+   ok(await p.$eval('#addTimeDetails',d=>!d.open)&&!(await p.isVisible('#addMin'))&&await p.isVisible('#manualList li'),'my plan: "Add study time you did elsewhere" is closed; the manual entries stay visible');
+   await p.click('#addTimeDetails summary');ok(await p.isVisible('#addMin'),'my plan: opening it shows the form');
+   const pj=await p.$eval('[aria-labelledby=planProj] .card',e=>e.textContent);
+   ok(!/\d+\.\d+ hours|400 to 1200/.test(pj)&&/weakest skill/.test(pj),'my plan: projection text has no decimals like "44.4" and uses the weakest skill');
+   // calendar download
+   const [dl]=await Promise.all([p.waitForEvent('download'),p.click('#icsBtn')]);
+   const txtIcs=fs.readFileSync(await dl.path(),'utf8');const name=dl.suggestedFilename();
+   const logical=txtIcs.replace(/\r\n /g,'').split('\r\n');
+   const stack=[];let pairs=true;logical.forEach(l=>{if(l.startsWith('BEGIN:'))stack.push(l.slice(6));else if(l.startsWith('END:')){if(stack.pop()!==l.slice(4))pairs=false}});
+   const ev=txtIcs.replace(/\r\n /g,'').split('BEGIN:VEVENT').slice(1);
+   const get=(e,k)=>(e.match(new RegExp('\\r\\n'+k+'[:;]([^\\r]*)'))||[])[1];
+   ok(/\.ics$/.test(name)&&txtIcs.endsWith('\r\n')&&!/[^\r]\n/.test(txtIcs)&&pairs&&stack.length===0&&logical[0]==='BEGIN:VCALENDAR'&&logical.includes('VERSION:2.0'),'ics: downloaded as .ics, CRLF everywhere, BEGIN/END pairs balance ('+name+')');
+   ok(txtIcs.split('\r\n').every(l=>Buffer.byteLength(l)<=75),'ics: no line is longer than 75 octets');
+   ok(ev.length===7&&ev.every(e=>/\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\n/.test(e)&&get(e,'TRIGGER')==='-PT10M'),'ics: one event per preferred day (7), each with a VALARM 10 minutes before');
+   ok(ev.map(e=>get(e,'RRULE').match(/BYDAY=(\w\w)/)[1]).sort().join()==='FR,MO,SA,SU,TH,TU,WE'&&ev.every(e=>/^FREQ=WEEKLY;/.test(get(e,'RRULE'))),'ics: weekly RRULE with BYDAY matching the preferred days');
+   const dur=e=>{const a=get(e,'DTSTART'),b=get(e,'DTEND');const t=x=>new Date(+x.slice(0,4),+x.slice(4,6)-1,+x.slice(6,8),+x.slice(9,11),+x.slice(11,13)).getTime();return (t(b)-t(a))/60000};
+   ok(ev.every(e=>/^\d{8}T073000$/.test(get(e,'DTSTART'))&&dur(e)===Math.round(6*60/7)),'ics: DTSTART is 07:30 floating (no zone) and the length is the session length ('+dur(ev[0])+' min)');
+   const until=new Date(Date.now()+59*864e5);const u=until.getFullYear()+String(until.getMonth()+1).padStart(2,'0')+String(until.getDate()).padStart(2,'0')+'T235959';
+   ok(ev.every(e=>/UNTIL=/.test(get(e,'RRULE'))&&get(e,'RRULE').split('UNTIL=')[1]===u)&&new Set(ev.map(e=>get(e,'UID'))).size===7&&ev.every(e=>/^CELPIP study: /.test(get(e,'SUMMARY'))&&/DESCRIPTION:.*\\n- /.test(e)),'ics: repeats until the day before the test; unique UIDs; summary "CELPIP study: <focus>"; description lists tasks');
+   ok(!/SECRET|Secret Name|x\\;y/i.test(txtIcs),'ics: the manual note and the learner name never reach the file');
+   ok(/nothing is sent/i.test(await txt('#app')||'')&&/made on this device/i.test(await txt('#app')||''),'my plan: the page says the file is made on the device and nothing is sent');
+   // phone: no sideways scroll, Home tab
+   const pc=await b.newContext({viewport:{width:390,height:844}});const q=await pc.newPage();await q.goto(BASE+'#/dashboard');
+   await q.evaluate(s=>{localStorage.clear();const o=JSON.parse(s);for(const k in o)localStorage.setItem(k,o[k])},await p.evaluate(()=>JSON.stringify(Object.assign({},localStorage))));
+   const side=async h=>{await q.evaluate(h=>{location.hash=h},h);await q.reload();await q.waitForTimeout(400);return q.evaluate(()=>[document.documentElement.scrollWidth,innerWidth])};
+   const s1=await side('#/dashboard'),s2=await side('#/plan');
+   ok(s1[0]<=s1[1]&&s2[0]<=s2[1],'phone 390px: Home and My plan do not scroll sideways ('+s1+' / '+s2+')');
+   await q.evaluate(()=>{location.hash='#/dashboard'});await q.reload();await q.waitForTimeout(300);
+   ok((await q.$$eval('#tabBar a',x=>x.map(a=>a.textContent.trim()))).includes('Home')&&await q.isVisible('#tabBar a[data-section="dashboard"] svg')&&await q.isVisible('.tile-plan'),'phone 390px: bottom tab says Home with an icon; the plan card shows');
+   await pc.close();
+   await p.evaluate(s=>{localStorage.clear();const o=JSON.parse(s);for(const k in o)localStorage.setItem(k,o[k])},snap)});
+
+ // T-030 turn 2 follow-up (Inyene's review and Ufok's check): escaping, tracker allow-list, reset, save limits, import cap, one today focus
+ await step('turn 2 follow-up: review fixes',async()=>{
+   const snap=await p.evaluate(()=>JSON.stringify(Object.assign({},localStorage)));
+   await go('#/dashboard');
+   const esc=await p.evaluate(()=>[CalendarExport.escapeText('a;b'),CalendarExport.escapeText('a,b'),CalendarExport.escapeText('a\\b'),CalendarExport.escapeText('a\nb'),CalendarExport.escapeText('x;y,z\\w\nq')]);
+   ok(esc[0]==='a\\;b'&&esc[1]==='a\\,b'&&esc[2]==='a\\\\b'&&esc[3]==='a\\nb'&&esc[4]==='x\\;y\\,z\\\\w\\nq'&&esc[0].length===4,'ics: a value with ; , \\ and a new line comes out as \\; \\, \\\\ and \\n ('+esc[4]+')');
+   const sk=await p.evaluate(()=>['practice/constructor','practice/__proto__','learn/toString','practice/reading','learn/writing','practice/general'].map(x=>Study.tracker.skillFor(x)));
+   ok(sk.join()==='general,general,general,reading,writing,general','tracker: only a listed skill is taken from the URL; "constructor" and "__proto__" count as General ('+sk+')');
+   await p.evaluate(()=>{localStorage.setItem('celpip_checkin_v1','2026-11-05');Storage.set('studyTime',{days:{},manual:[]});Storage.resetAll()});
+   ok(await p.evaluate(()=>localStorage.getItem('celpip_checkin_v1'))===null&&!(await p.evaluate(()=>'celpip_checkin_v1' in Storage.exportAll()||'checkin' in Storage.exportAll())),'reset: the check-in date is removed, and it is not part of export (not in KEYS)');
+   await go('#/settings');
+   ok(await p.$eval('#nameInput',e=>e.maxLength)===60,'settings: the name box stops at 60 characters');
+   await p.evaluate(()=>{const n=document.getElementById('nameInput');n.removeAttribute('maxlength');n.value='B'.repeat(200);const d=document.getElementById('examDateInput');d.type='text';d.value='"><img src=x onerror=1>'});
+   await p.click('#saveSettings');await run(50);
+   const sv=await p.evaluate(()=>Storage.getSettings());
+   ok(sv.name.length===60&&sv.examDate==='','settings save: an over-long name is cut to 60 and a test date that is not YYYY-MM-DD is dropped ('+sv.name.length+', "'+sv.examDate+'")');
+   const days={};for(let i=0;i<450;i++){const d=new Date(Date.UTC(2024,0,1+i));days[d.toISOString().slice(0,10)]={reading:5}}
+   await go('#/settings');await p.setInputFiles('#importFile',{name:'many.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({studyTime:{days,manual:[]}}))});await p.waitForTimeout(300);
+   const kept=await p.evaluate(()=>Object.keys(Storage.get('studyTime',null).days).sort());
+   ok(kept.length===400&&kept[399]==='2025-03-25'&&kept[0]>'2024-02-01','import: studyTime days are capped at 400, newest kept ('+kept.length+')');
+   // one today focus: Home card, My plan Today and Your rhythm agree; the old Today tile is gone
+   await p.evaluate(()=>{localStorage.clear();localStorage.setItem('celpip_settings_v1',JSON.stringify({targetCLB:9,hoursPerWeek:7,sessionMin:75,examDate:'',studyDays:[0,1,2,3,4,5,6],studyTime:'',name:''}));
+     localStorage.setItem('celpip_history_v1',JSON.stringify([['reading',8],['listening',7],['writing',6],['speaking',5]].map(([k,v],i)=>({id:'a_17300000000'+i+'_aaa11'+i,type:'practice',skill:k,pct:70,clb:v,date:new Date().toISOString()}))))});
+   await go('#/dashboard');const home=await txt('#app')||'';
+   const hf=((await txt('.tile-plan')||'').match(/Next session: today[^.]*?(Reading|Listening|Writing|Speaking)/)||[])[1];
+   ok(!/(Reading|Listening|Writing|Speaking) day/.test(home)&&!(await p.$('.tile .badge'))&&!!hf,'home: the old "Today" tile is gone; one focus is shown in the plan card ('+hf+')');
+   await go('#/plan');const pf=((await txt('[aria-labelledby=planToday] .card')||'').match(/Focus: (\w+)/)||[])[1];
+   const rf=await p.$$eval('.week-card',c=>c.map(x=>x.textContent));const dn=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
+   const rhy=(rf.find(x=>x.startsWith(dn))||'').match(/(Reading|Listening|Writing|Speaking) day/);
+   ok(pf===hf&&rhy&&rhy[1]===hf,'one focus for today: Home card ('+hf+'), My plan Today ('+pf+') and Your rhythm ('+(rhy&&rhy[1])+') agree');
    await p.evaluate(s=>{localStorage.clear();const o=JSON.parse(s);for(const k in o)localStorage.setItem(k,o[k])},snap)});
 
  console.log(`\n${fails} failure(s)`);await b.close();process.exit(fails?1:0)})();

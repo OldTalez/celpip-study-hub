@@ -9,6 +9,11 @@
  * Key idea, "spaced review": a question you get wrong comes back after 1 day, then 3, 7, 14, 30 and 60 days as you keep getting it right.
  * This is called the Leitner method: each question sits in a "box" (0 to 6) and moves up when answered correctly or back to box 0 when wrong.
  * Everything is stored in this browser through Storage (js/storage.js); nothing is sent anywhere.
+ * T-030 turn 1 (2026-11-05): "Plan" became "My plan" (route still #/plan): automatic and manual study-time tracking, the page built
+ * from the pure functions in js/prescription.js, and Settings gained preferred study days and a preferred time.
+ * T-030 turn 2 (2026-11-05): the dashboard is now called Home (HOME_LABEL) and has a "My plan" overview card (homePlanCard); My plan gained
+ * on-track words and icons, a gentle check-in after missed days (planModel, checkInHtml), a closed "add study time" form and a calendar
+ * download (CalendarExport in js/calendar.js).
  * T-029 turn C (2026-11-05): the dashboard gained a radar chart (radarTile), a pace tile (paceTile, one constant PACE_GUIDE_SEC)
  * and a mastery grid by part (masteryTile), all hand-drawn or plain HTML, no chart library.
  * T-029 turn A (2026-11-05): the Learn screens got a contents list ("On this page", built by Shell.contents in js/shell.js),
@@ -266,8 +271,10 @@
   }
 
   // LEARNING NOTE: "pace" is how long you spend on each multiple-choice question. PACE_GUIDE_SEC is the one number the
-  // tile compares against. It is a guide, not a rule: the real Reading test allows up to about 56 minutes for 38 questions
-  // (about 88 seconds each; celpip.ca CELPIP-General page, checked 2026-11-05), so 90 seconds is a round ceiling.
+  // tile compares against. It is a guide, not a rule: the official Reading allowance is 43 to 56 minutes
+  // (celpip.ca "Test Format & Scoring", supplied by the Board 2026-11-05). The page gives no question count; the usual figure of 38
+  // questions comes from third-party sites and is UNOFFICIAL, so the per-question pace (about 68 to 88 seconds) is only a rough
+  // guess and 90 seconds is a round, editable ceiling.
   // Change this one constant to change the guide everywhere.
   const PACE_GUIDE_SEC = 90;
   const PACE_ATTEMPTS = 10;
@@ -306,8 +313,85 @@
       <p class="muted small">Percent right, and how many questions. Darker means stronger. Choose a part to practise it.</p>`;
   }
 
+  // ================= HOME CARD, CHECK-IN, PLAN MODEL (T-030 turn 2) =================
+  // LEARNING NOTE: the label of the first screen lives in ONE place. The route is still #/dashboard so old links keep working.
+  // Change HOME_LABEL and the menu text, page title and heading all follow (the menus are written in index.html, so we copy the label in below).
+  const HOME_LABEL = "Home";
+  document.querySelectorAll('[data-section="dashboard"]').forEach(a => { const n = Array.from(a.childNodes).reverse().find(x => x.nodeType === 3 && x.textContent.trim()); if (n) n.textContent = HOME_LABEL; });
+  const CHECKIN_KEY = "celpip_checkin_v1";   // holds one date: the day the learner dismissed the check-in. Plain text, nothing else.
+  const STUDIED_MIN_MINUTES = 5;             // guide: a day with at least 5 tracked minutes (or any saved attempt or log entry) counts as studied
+  function checkInDismissed(t) { try { return localStorage.getItem(CHECKIN_KEY) === t; } catch (e) { return false; } } // try/catch: storage can be blocked
+  function dismissCheckIn(t) { try { localStorage.setItem(CHECKIN_KEY, t); } catch (e) { /* blocked storage: the banner simply comes back next time */ } }
+
+  // Everything the plan screen and the Home card both need, computed once so the two always agree.
+  function planModel() {
+    const settings = Storage.getSettings(), history = Storage.getHistory(), t = today(), now = new Date();
+    const latest = {};
+    SKILLS.forEach(s => { latest[s.id] = latestClbForSkill(history, s.id); });
+    const split = Prescription.skillShares(latest, settings.targetCLB);
+    const sched = Prescription.schedule(settings, split.shares);
+    const wkStart = Prescription.weekStart(t), td = timeData(), done = Prescription.weekDone(td.days, wkStart);
+    const verdict = Prescription.onTrack(sched, split.shares, done, t);
+    const next = Prescription.nextSession(sched, settings.studyTime, now);
+    const studied = studyDays();
+    Object.keys(td.days).forEach(d => { const r = td.days[d]; if (r && typeof r === "object" && Object.values(r).reduce((a, v) => a + (Number(v) || 0), 0) >= STUDIED_MIN_MINUTES) studied.add(d); });
+    const first = Array.from(studied).filter(d => Prescription.isDay(d)).sort()[0] || null;
+    const ci = Prescription.checkIn(sched, studied, t, first);
+    return { settings, history, t, latest, split, sched, wkStart, done, verdict, next, ci };
+  }
+  // Words plus a shape, never colour alone: tick (on track), clock (a little behind), bar (behind).
+  const STATUS_SHAPE = { ontrack: "M5 12.5l4.5 4.5L19 7.5", little: "M12 6v6l4 2", behind: "M6 12h12" };
+  function statusHtml(j) {
+    return `<span class="status status-${j.status}"><svg class="status-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="${STATUS_SHAPE[j.status]}"/></svg><span>${escapeHtml(j.text)}</span></span>`;
+  }
+  function nextText(n) {
+    if (!n) return "none planned";
+    return (n.daysAway === 0 ? "today" : n.daysAway === 1 ? "tomorrow" : DAY_NAMES[n.dow]) + (n.time ? " at " + n.time : "") + ", " + SKILL_NAMES[n.focus] + ", about " + n.minutes + " min";
+  }
+  // The check-in banner. Gentle by rule: no blame words, always says what to do next. Returns "" when there is nothing to say.
+  function checkInHtml(m) {
+    if (m.ci.kind === "none" || checkInDismissed(m.t)) return "";
+    const name = d => DAY_NAMES[Prescription.parseDay(d).getDay()];
+    let body;
+    if (m.ci.kind === "one") {
+      body = `<strong>Welcome back.</strong> ${escapeHtml(name(m.ci.missed[0]))} did not happen this time, and that is fine. One day off does not break a habit, so your streak is safe (Lally 2010, medium confidence). Next session: ${escapeHtml(nextText(m.next))}.`;
+    } else {
+      const bits = m.ci.catchUp.map(c => `${DAY_NAMES[c.dow].slice(0, 3)} +${c.extraMin} min`).join(", ");
+      body = `<strong>Welcome back.</strong> It has been a few days, so your streak count starts again today. That is normal; what matters is the next session. If you would like a small catch-up: ${escapeHtml(bits)} (never more than ${Math.round(Prescription.CATCHUP_MAX_EXTRA * 100)}% extra a day, spread over up to ${Prescription.CATCHUP_MAX_DAYS} sessions). Or just do the plan as it is.`;
+    }
+    return `<div class="checkin" role="status"><svg class="status-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg><div><p>${body}</p><button type="button" class="btn btn-sm" data-checkin-dismiss>Dismiss for today</button></div></div>`;
+  }
+  function wireCheckIn(t) {
+    document.querySelectorAll("[data-checkin-dismiss]").forEach(b => b.onclick = () => {
+      dismissCheckIn(t);
+      document.querySelectorAll(".checkin").forEach(e => e.remove());
+      const h = document.querySelector("#app h1"); if (h) { h.tabIndex = -1; h.focus(); } // keep keyboard focus on the page, not on a removed button
+    });
+  }
+  // The Home card. The heading is a real link whose ::after stretches over the whole card (see .card-link in css), so one click or Enter
+  // anywhere opens My plan. Nothing interactive sits INSIDE that link; the dismiss button and the Settings links are siblings raised above it.
+  function homePlanCard(m, proj, mil) {
+    const hasScores = Object.values(m.latest).some(v => v !== null);
+    const parts = [];
+    if (!m.sched.chosen && !hasScores) {
+      parts.push(`<p>Your plan is not set up yet. <a class="raised" href="#/settings">Choose your study days in Settings</a> and <a class="raised" href="#/diagnostic">take the diagnostic</a>, and it fills in.</p>`);
+    } else {
+      const got = Math.round(m.done.total), target = m.sched.weeklyMin, pc = pct(got, target);
+      parts.push(`<p>This week: <strong>${got} of ${target} min</strong> (${pc}%)</p><div class="bar" aria-hidden="true"><i style="width:${pc}%"></i></div><p>${statusHtml(m.verdict.overall)}</p>`);
+      parts.push(`<p>${m.sched.chosen ? "" : "Suggested days until you choose yours. "}Next session: <strong>${escapeHtml(nextText(m.next))}</strong>.</p>`);
+      parts.push(proj.projected
+        ? `<p class="muted">About CLB ${proj.projected.low === proj.projected.high ? proj.projected.low : proj.projected.low + " to " + proj.projected.high} by your test date. ${escapeHtml(Prescription.LABEL)}.</p>`
+        : `<p class="muted">${hasScores ? "Add a test date in Settings to see a projection." : "Take the diagnostic to see a projection."}</p>`);
+      const open = mil.filter(x => !x.met).slice(0, 2);
+      if (open.length) parts.push(`<ul class="tips-list">${open.map(x => `<li>${escapeHtml(x.text)}</li>`).join("")}</ul>`);
+    }
+    return `<section class="card tile span-2 tile-plan" aria-labelledby="homePlanH">
+      <h2 id="homePlanH"><a class="card-link" href="#/plan">My plan<span class="sr-only">: open the full plan</span></a></h2>
+      ${checkInHtml(m)}${parts.join("")}<p class="muted small" aria-hidden="true">Open the full plan &rarr;</p></section>`;
+  }
+
   route("dashboard", () => {
-    setPageTitle("Dashboard");
+    setPageTitle(HOME_LABEL);
     const history = Storage.getHistory();
     const settings = Storage.getSettings();
     const latest = {};
@@ -316,18 +400,20 @@
     const overall = known.length ? Math.round(known.reduce((a, b) => a + b, 0) / known.length) : null;
     const due = dueMistakes().length, vDue = vocabDue().length, sk = streak();
     const weak = weakSpots(3);
-    const plan = dayPlan(new Date().getDay(), settings);
     const diagDone = SKILLS.filter(s => diagnosticFor(s.id)).length;
     let weeks = null;
     if (settings.examDate) weeks = Math.ceil((new Date(settings.examDate) - new Date()) / (7 * DAY));
 
+    const pm = planModel();
+    const pproj = Prescription.projection(pm.settings, pm.latest, pm.t);
+    const pmil = Prescription.milestones(pm.history, getPartStats(), pm.wkStart, diagDone > 0);
     const lastExam = history.filter(h => h.type === "exam").pop();
     const gauge = overall === null ? 0 : Math.round(100 * overall / 12);
 
     // LEARNING NOTE: a "bento" layout is a grid of tiles of different sizes, like a lunch box. The grid has four
     // columns on a wide screen, two on a tablet and one on a phone; span-2 and span-4 tiles take more columns.
     mount(`
-      <h1>${settings.name ? "Hello, " + escapeHtml(settings.name) : "Your study desk"}</h1>
+      <h1>${settings.name ? "Hello, " + escapeHtml(settings.name) : HOME_LABEL}</h1>
       <section class="bento">
         <div class="card tile span-2 tile-level">
           <div class="ring-wrap small">
@@ -350,13 +436,10 @@
           ${weeks !== null ? `<div class="tile-num">${weeks > 0 ? weeks : 0}</div><p class="muted small">${weeks > 0 ? `week${weeks === 1 ? "" : "s"} to go` : "Your test date has arrived or passed."}</p>` : `<p class="muted small">No date yet.</p><a class="btn btn-sm" href="#/settings" aria-label="Add your test date">Add date</a>`}
         </div>
         ${diagDone < 4 ? `<div class="card tile span-4 today"><h2>Start here: the diagnostic</h2><p>A short cold test in each skill (${diagDone} of 4 done). It sets your starting point and shapes your plan. Do it before you study, without looking anything up.</p><a class="btn btn-primary" href="#/diagnostic">Open the diagnostic</a></div>` : ""}
+        ${homePlanCard(pm, pproj, pmil)}
         <div class="card tile span-2 tile-radar">${radarTile(history, settings.targetCLB)}</div>
         <div class="card tile span-2 tile-pace">${paceTile(history)}</div>
         <div class="card tile span-2 tile-mastery">${masteryTile()}</div>
-        <div class="card tile span-2 today">
-          <span class="badge">Today</span> <strong>${plan.label}</strong>
-          <ul class="tips-list mt">${plan.steps.map(s => `<li><a href="${s.href}">${escapeHtml(s.text)}</a> <span class="muted">(about ${s.min} min)</span></li>`).join("")}</ul>
-        </div>
         <div class="card tile span-2">
           <h2>Quick practice</h2>
           <div class="quick-grid">${SKILLS.map(s => `<a class="quick" href="#/practice/${s.id}">${s.icon}<span>${s.name}</span></a>`).join("")}</div>
@@ -392,6 +475,7 @@
         </div>
       </section>
     `);
+    wireCheckIn(pm.t);
     const rtb = document.getElementById("radarTableBtn");
     if (rtb) rtb.onclick = () => {
       const open = rtb.getAttribute("aria-expanded") !== "true";
@@ -654,28 +738,211 @@
     app.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { Storage.set("log", (Storage.get("log", []) || []).filter(e => e.id !== b.dataset.del)); render(); });
   });
 
-  // ================= PLAN =================
+  // ================= STUDY-TIME TRACKING (T-030) =================
+  // LEARNING NOTE: how the app counts study time on its own, and why it is built this way.
+  //  - Every TRACK_TICK_MS (5 seconds) a timer asks "is the learner studying right now?". If yes, it adds 5 seconds to today's total.
+  //  - "Studying" means: the tab is visible (document.hidden is false), the learner touched the page within TRACK_IDLE_MS (2 minutes:
+  //    mouse, key, scroll or touch; or the voice is speaking in Listening), and the screen is one of TRACKED below.
+  //  - Counting ticks, not clock differences, means a laptop that sleeps for an hour adds nothing, and a long idle gap adds nothing.
+  //  - The minutes go to the skill whose screen is open (practice/reading counts for Reading); review, words, grammar, the exam and
+  //    the diagnostic count as "general" because they mix skills. Time on other screens (dashboard, plan, settings) is not counted.
+  //  - Stored under the key "studyTime" as { days: { "2026-11-05": { reading: 12.5 } }, manual: [...] }. Nothing leaves the browser.
+  const TRACK_TICK_MS = 5000, TRACK_IDLE_MS = 120000;
+  const TRACKED = ["practice", "exam", "review", "vocab", "grammar", "learn", "diagnostic"];
+  const TIME_SKILLS = ["listening", "reading", "writing", "speaking", "general"];
+  const MAX_TIME_DAYS = 400; // older days are dropped so the stored list cannot grow without end
+  let lastActive = Date.now();
+  function noteActivity() { lastActive = Date.now(); }
+  ["pointerdown", "keydown", "scroll", "touchstart", "mousemove"].forEach(ev => document.addEventListener(ev, noteActivity, { passive: true, capture: true }));
+  function timeData() {
+    const t = Storage.get("studyTime", null);
+    return { days: t && t.days && typeof t.days === "object" && !Array.isArray(t.days) ? t.days : {}, manual: t && Array.isArray(t.manual) ? t.manual : [] };
+  }
+  function saveTime(data) {
+    const keys = Object.keys(data.days).sort();
+    while (keys.length > MAX_TIME_DAYS) delete data.days[keys.shift()];
+    Storage.set("studyTime", data);
+  }
+  function addStudyMinutes(date, skill, minutes) {
+    const data = timeData(), row = data.days[date] || {};
+    row[skill] = Math.round(((Number(row[skill]) || 0) + minutes) * 100) / 100;
+    data.days[date] = row;
+    saveTime(data);
+  }
+  function trackSkill(path) {
+    const parts = path.split("/").filter(Boolean);
+    if (!TRACKED.includes(parts[0])) return null;
+    return (parts[0] === "practice" || parts[0] === "learn") && TIME_SKILLS.includes(parts[1]) ? parts[1] : "general" /* allow-list: "constructor" or "__proto__" in the URL must not pass */;
+  }
+  // Returns true when it counted 5 seconds. "now" and "hidden" are passed in so the test can pretend time passed.
+  function trackTick(now, hidden) {
+    if (hidden) return false;
+    const voice = window.speechSynthesis && window.speechSynthesis.speaking;
+    if (now - lastActive > TRACK_IDLE_MS && !voice) return false;
+    const skill = trackSkill(currentRoute());
+    if (!skill) return false;
+    addStudyMinutes(today(), skill, TRACK_TICK_MS / 60000);
+    return true;
+  }
+  setInterval(() => trackTick(Date.now(), document.hidden), TRACK_TICK_MS);
+  window.Study.tracker = { tick: trackTick, noteActivity, skillFor: trackSkill, IDLE_MS: TRACK_IDLE_MS };
+
+  // Manual entry: validated, then stored. The note is plain text and is shown with textContent only (never as HTML).
+  function addManualTime(minutes, date, skill, note) {
+    const m = Math.round(Number(minutes));
+    if (!Number.isFinite(m) || m < 1 || m > 600) return "Minutes must be a whole number from 1 to 600.";
+    if (!Prescription.isDay(date) || date > today() || date < Prescription.addDays(today(), -365)) return "Pick a date in the last year, not in the future.";
+    if (!TIME_SKILLS.includes(skill)) return "Pick a skill or General.";
+    const data = timeData(), row = data.days[date] || {};
+    row[skill] = Math.round(((Number(row[skill]) || 0) + m) * 100) / 100;
+    data.days[date] = row;
+    data.manual.push({ id: "m_" + Date.now(), date, skill, minutes: m, note: String(note || "").trim().slice(0, 140) });
+    if (data.manual.length > 200) data.manual = data.manual.slice(-200);
+    saveTime(data);
+    return "";
+  }
+  function removeManualTime(id) {
+    const data = timeData(), e = data.manual.find(x => x.id === id);
+    if (!e) return;
+    const row = data.days[e.date];
+    if (row && Number.isFinite(row[e.skill])) { row[e.skill] = Math.max(0, Math.round((row[e.skill] - e.minutes) * 100) / 100); }
+    data.manual = data.manual.filter(x => x.id !== id);
+    saveTime(data);
+  }
+
+  // ================= MY PLAN (T-030) =================
+  // LEARNING NOTE: this screen only draws. The thinking is in js/prescription.js (pure functions, easy to test). Here we read the
+  // learner's data (settings, results, study time), call those functions, and turn the answers into HTML.
+  // Same day-of-week order as the Settings checkboxes: Monday first.
+  const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+  const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const FOCUS_DOW = { reading: 1, listening: 2, writing: 3, speaking: 4 }; // which weekday of the old rhythm teaches each skill (dayPlan reuse)
+  const pct = (a, b) => (b ? Math.min(100, Math.round(100 * a / b)) : 0);
+
   route("plan", () => {
-    setPageTitle("Plan");
-    const settings = Storage.getSettings(), history = Storage.getHistory();
-    const base = {};
-    SKILLS.forEach(s => { const d = diagnosticFor(s.id); base[s.id] = d ? d.clb : latestClbForSkill(history, s.id); });
-    const gaps = SKILLS.map(s => ({ s, clb: base[s.id], gap: base[s.id] === null ? null : Math.max(0, settings.targetCLB - base[s.id]) }));
-    const known = gaps.filter(g => g.gap !== null).sort((a, b) => b.gap - a.gap);
-    const weeks = settings.examDate ? Math.ceil((new Date(settings.examDate) - new Date()) / (7 * DAY)) : null;
-    const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const order = [1, 2, 3, 4, 5, 6, 0];
+    setPageTitle("My plan");
+    const { settings, history, t, latest, split, sched, wkStart, done, verdict, next, ci } = planModel();
+    const templates = {};
+    Object.keys(FOCUS_DOW).forEach(k => { templates[k] = dayPlan(FOCUS_DOW[k], Object.assign({}, settings, { sessionMin: sched.sessionMin })).steps; });
+    const now = Prescription.todayTasks(sched, t, templates);
+    const proj = Prescription.projection(settings, latest, t);
+    const wk = Prescription.weeksLeft(settings, t);
+    const daysLeft = Prescription.isDay(settings.examDate) ? Math.round(wk * 7) : null;
+    const lastMock = history.filter(h => h.type === "exam").map(h => h.date).sort().pop();
+    const mock = Prescription.mockPlan(t, settings.examDate, lastMock ? lastMock.slice(0, 10) : null, SKILLS.some(s => diagnosticFor(s.id)));
+    const review = Prescription.reviewSpacing(daysLeft);
+    const mil = Prescription.milestones(history, getPartStats(), wkStart, SKILLS.some(s => diagnosticFor(s.id)));
+    const dayList = sched.days.map(d => DAY_NAMES[d.dow].slice(0, 3)).join(", ");
+
+    const skillRows = SKILLS.map(s => {
+      const target = Math.round(sched.weeklyMin * split.shares[s.id]), got = Math.round(done[s.id]);
+      return `<li class="plan-row"><div class="plan-row-top"><strong>${s.name}</strong> <span>${got} of ${target} min (${pct(got, target)}%)</span></div><div>${statusHtml(verdict.skills[s.id])}</div><div class="bar" aria-hidden="true"><i style="width:${pct(got, target)}%"></i></div></li>`;
+    }).join("");
+    const totalGot = Math.round(done.total), totalPct = pct(totalGot, sched.weeklyMin);
+
+    const projHtml = (() => {
+      let h = "";
+      if (proj.projected) {
+        const a = proj.projected.low, b = proj.projected.high;
+        h += `<p>At your pace (${Math.round(sched.weeklyMin / 6) / 10} hours a week for about ${proj.weeksLeft} week${proj.weeksLeft === 1 ? "" : "s"}), you could reach about <strong>CLB ${a === b ? a : a + " to " + b}</strong> on average by your test date.</p>`;
+      }
+      if (proj.hoursNeeded && proj.stepsToTarget > 0) {
+        h += `<p>To bring your weakest skill up <strong>${proj.stepsToTarget} step${proj.stepsToTarget === 1 ? "" : "s"}</strong> to <strong>CLB ${proj.target}</strong> you need about <strong>${proj.hoursNeeded[0]} to ${proj.hoursNeeded[1]} hours</strong> of study in total, shared across all four skills` + (proj.neededPerWeek ? `. That is about <strong>${proj.neededPerWeek[0]} to ${proj.neededPerWeek[1]} hours a week</strong> until the test.` : ".") + `</p>`;
+      }
+      h += proj.messages.map(m => `<p class="muted">${escapeHtml(m)}</p>`).join("");
+      return h;
+    })();
+
+    const taskHtml = now.isStudyDay
+      ? `<p>Session today: about <strong>${now.sessionMin} minutes</strong>, in blocks of ${sched.blockMin} minutes` + (settings.studyTime ? ` at ${escapeHtml(settings.studyTime)}` : "") + `. Focus: <strong>${SKILL_NAMES[now.focus]}</strong>.</p>
+         <ul class="tips-list">${now.tasks.map(s => `<li><a href="${s.href}">${escapeHtml(s.text)}</a> <span class="muted">(about ${s.min} min${s.retrieval ? "" : ", not questions"})</span> <a class="btn" href="${s.href}">Start<span class="sr-only">: ${escapeHtml(s.text)}</span></a></li>`).join("")}</ul>
+         <p class="muted small">${now.retrievalShare}% of today is questions and recall. The research note asks for at least 60% (Dunlosky 2013, medium confidence).</p>`
+      : `<p>Today is not one of your study days (${dayList}). Next: <strong>${DAY_NAMES[(parseInt(new Date(t + "T12:00:00").getDay()) + now.nextStudyInDays) % 7]}</strong>, ${SKILL_NAMES[now.nextFocus]}.</p><p><a class="btn" href="#/practice">Study anyway</a></p>`;
+
+    const mHtml = mil.map(m => `<li><span class="mil-state">${m.met ? "Done" : "Not yet"}</span> ${escapeHtml(m.text)} <span class="muted">(${m.detail ? escapeHtml(m.detail) : m.have + " of " + m.goal}; ${escapeHtml(m.basis)})</span></li>`).join("");
+
+    const rhythm = sched.days.map(d => `<div class="card week-card"><div class="week-badge">${DAY_NAMES[d.dow]}<br><span class="muted small">${SKILL_NAMES[d.focus]} day</span></div><ul class="tips-list">${templates[d.focus].map(s => `<li><a href="${s.href}">${escapeHtml(s.text)}</a> <span class="muted">(about ${s.min} min)</span></li>`).join("")}</ul></div>`).join("");
+
     mount(`
-      <h1>Study plan</h1>
-      <p class="muted">A weekly rhythm built around sessions of about ${Number(settings.sessionMin)} minutes (change this in Settings). The rhythm itself is a proposal you can ignore or adapt.</p>
-      ${known.length ? `<div class="card"><h3>Where you are against CLB ${Number(settings.targetCLB)}</h3><ul class="tips-list">${gaps.map(g => `<li><strong>${g.s.name}:</strong> ${g.clb === null ? "no score yet (take the diagnostic)" : "about CLB " + g.clb + (g.gap ? `, ${g.gap} level${g.gap === 1 ? "" : "s"} below target` : ", at or above target")}</li>`).join("")}</ul>
-        <p>Biggest gap: <strong>${known[0].s.name}</strong>${known[0].gap ? "." : " (none; keep practising to stay there)."} Add one extra half-session on that skill each week.</p></div>`
-        : `<div class="card today"><p>You have no scores yet, so the plan cannot point at a weak skill. <a href="#/diagnostic">Take the diagnostic first</a>.</p></div>`}
-      ${weeks !== null ? `<div class="card mt"><p>${weeks > 0 ? `Your test date is in about <strong>${weeks}</strong> week${weeks === 1 ? "" : "s"}.` : "Your test date has arrived or passed."} Plan one timed full exam about two weeks before.</p></div>` : `<p class="muted mt">Add a test date in <a href="#/settings">Settings</a> to see a countdown.</p>`}
-      <h2 class="mt">The week</h2>
-      <div class="week-plan">${order.map(d => { const p = dayPlan(d, settings); return `<div class="card week-card"><div class="week-badge">${names[d]}<br><span class="muted small">${p.label}</span></div><ul class="tips-list">${p.steps.map(s => `<li><a href="${s.href}">${escapeHtml(s.text)}</a> <span class="muted">(about ${s.min} min)</span></li>`).join("")}</ul></div>`; }).join("")}</div>
-      <p class="muted small mt">Time estimates are a guide. There is no research behind the exact split; adjust it to what works for you.</p>
+      <h1>My plan</h1>
+      <p class="muted">A study plan built from your results, your test date and the days you chose in <a href="#/settings">Settings</a>. It is a planning guide, not official CELPIP advice, and it promises no score.</p>
+      ${checkInHtml({ ci, next, t })}
+      <section aria-labelledby="planWeek"><h2 id="planWeek" class="mt">This week</h2>
+        <div class="card">
+          <p>Target <strong>${sched.weeklyMin} minutes</strong> (${Math.round(sched.weeklyMin / 6) / 10} hours a week, from Settings); done so far <strong>${totalGot} minutes (${totalPct}%)</strong>. Week of ${escapeHtml(wkStart)}.</p>
+          <p>${statusHtml(verdict.overall)} <span class="muted small">(compared with the sessions planned before today; a planning guide, not a score)</span></p>
+          <div class="bar" aria-hidden="true"><i style="width:${totalPct}%"></i></div>
+          <ul class="plan-rows">${skillRows}</ul>
+          <p class="muted small">Review, words, grammar and exam time is counted under General: ${Math.round(done.general)} min. ${split.equal ? "The split is equal until you have scores (take the diagnostic)." : "Split by gap to your target, weakest skill first, at least " + Math.round(Prescription.SKILL_FLOOR * 100) + "% each" + (split.missing.length ? "; " + split.missing.map(k => SKILL_NAMES[k]).join(", ") + " has no score yet" : "") + "."}</p>
+          ${sched.belowMinimum ? `<p role="status"><strong>Below the guide minimum:</strong> the plan suggests at least ${Prescription.MIN_STUDY_DAYS} study days and ${Prescription.MIN_WEEKLY_HOURS} hours a week (planning guide, low confidence).</p>` : ""}
+          <p class="muted small">Study time is counted by itself while you practise, review or learn (the tab must be showing and you must have touched the page in the last 2 minutes).</p>
+          <details class="plan-add-wrap" id="addTimeDetails"><summary>Add study time you did elsewhere</summary>
+          <form id="addTimeForm" class="plan-add" autocomplete="off">
+            <label class="field-label" for="addMin">Minutes</label><input type="number" id="addMin" min="1" max="600" value="30">
+            <label class="field-label" for="addDate">Date</label><input type="date" id="addDate" value="${t}" max="${t}">
+            <label class="field-label" for="addSkill">Skill</label><select id="addSkill">${TIME_SKILLS.map(k => `<option value="${k}">${k === "general" ? "General" : SKILL_NAMES[k]}</option>`).join("")}</select>
+            <label class="field-label" for="addNote">Note (optional, up to 140 characters)</label><input type="text" id="addNote" maxlength="140">
+            <div class="cta-row-single"><button type="submit" class="btn" id="addTimeBtn">Add study time</button></div>
+            <p id="addTimeMsg" class="muted small" role="status"></p>
+          </form></details>
+          <ul id="manualList" class="tips-list"></ul>
+        </div>
+      </section>
+      <section aria-labelledby="planToday"><h2 id="planToday" class="mt">Today</h2><div class="card today">${taskHtml}</div></section>
+      <section aria-labelledby="planProj"><h2 id="planProj" class="mt">Projection</h2>
+        <div class="card">${projHtml}
+          <p><strong>${escapeHtml(Prescription.LABEL)}.</strong> It uses about ${Prescription.HOURS_PER_STEP} hours per CLB step, shown as a range of ${Prescription.HOURS_PER_STEP_RANGE[0]} to ${Prescription.HOURS_PER_STEP_RANGE[1]}. That number is inferred from general-English study data (Cambridge), not from CELPIP (low confidence). Part of any practice gain is getting used to the test format.</p>
+          <p>${escapeHtml(mock.text)}</p>
+          <p>Review your mistakes about every <strong>${review.nextReviewDays} day${review.nextReviewDays === 1 ? "" : "s"}</strong> (about 15% of the days left, between 1 and 14), and bring each missed question back after ${review.ladder.join(", ")} days.</p>
+        </div>
+      </section>
+      <section aria-labelledby="planMil"><h2 id="planMil" class="mt">Milestones</h2>
+        <div class="card"><p class="muted small">Concrete targets from your history. "Guide" means a number chosen for this app, not taken from research.</p><ul class="tips-list">${mHtml}</ul></div>
+      </section>
+      <section aria-labelledby="planRhythm"><h2 id="planRhythm" class="mt">Your rhythm</h2>
+        <p class="muted">${sched.chosen ? "Your study days: " + dayList : "You have not chosen study days, so these are suggested: " + dayList + ". Choose yours in Settings"}${settings.studyTime ? ", at " + escapeHtml(settings.studyTime) : ""}. Each session is about ${sched.sessionMin} minutes.</p>
+        <div class="week-plan">${rhythm}</div>
+        <p class="muted small mt">The order of skills is a proposal and the time split inside a day has no research behind it. Adjust it to what works for you.</p>
+        <div class="card mt"><h3>Add study sessions to my calendar</h3>
+          <p>This makes a small calendar file (.ics) with a weekly repeating session on ${sched.chosen ? "your" : "the suggested"} study days (${escapeHtml(dayList)}) at ${escapeHtml(settings.studyTime || CalendarExport.DEFAULT_TIME)}, ${sched.sessionMin} minutes long, until ${Prescription.isDay(settings.examDate) && settings.examDate > t ? "the day before your test" : CalendarExport.DEFAULT_WEEKS + " weeks from today"}. Each one has a reminder ${CalendarExport.ALARM_MIN} minutes before and lists that day's tasks.${settings.studyTime ? "" : " You have not chosen a time in Settings, so " + CalendarExport.DEFAULT_TIME + " is used."}</p>
+          <p class="muted small">The file is made on this device and nothing is sent anywhere. It holds your study days, the time, the session length, each day's tasks and the end date (the day before your test); no name, no notes, no scores. Times are "floating", so they stay at the same clock time wherever you are. Open the downloaded file to add it to Google, Apple or Outlook calendar.</p>
+          <button type="button" class="btn" id="icsBtn">Add study sessions to my calendar</button>
+          <p id="icsMsg" class="muted small" role="status"></p>
+        </div>
+      </section>
     `);
+
+    wireCheckIn(t);
+    document.getElementById("icsBtn").onclick = () => {
+      const r = CalendarExport.buildIcs({ sched, settings, today: t, now: new Date(), focusName: f => SKILL_NAMES[f], tasksFor: (focus, date) => Prescription.todayTasks(sched, date, templates).tasks });
+      const msg = document.getElementById("icsMsg");
+      if (!r.ok) { msg.textContent = r.error; return; }
+      const url = URL.createObjectURL(new Blob([r.text], { type: "text/calendar;charset=utf-8" })); // a Blob is a file held in memory; the URL points at it
+      const a = document.createElement("a"); a.href = url; a.download = "celpip-study-sessions.ics"; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000); // free the memory later; revoking at once could cancel the download
+      msg.textContent = "Calendar file made: " + r.count + " weekly session" + (r.count === 1 ? "" : "s") + " at " + r.time + ", until " + r.untilDay + ". Check your downloads.";
+    };
+    // The manual list is built with textContent, so a note such as <img src=x onerror=...> shows as plain text and never runs.
+    const list = document.getElementById("manualList");
+    function drawManual() {
+      list.textContent = "";
+      timeData().manual.slice(-5).reverse().forEach(e => {
+        const li = document.createElement("li");
+        li.textContent = e.date + ": " + e.minutes + " min, " + (e.skill === "general" ? "General" : SKILL_NAMES[e.skill]) + (e.note ? " - " + e.note : "") + " ";
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn-icon"; b.textContent = "×"; b.setAttribute("aria-label", "Remove this study time entry"); b.title = "Remove";
+        b.onclick = () => { removeManualTime(e.id); render(); toast("Entry removed", "info"); };
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    }
+    drawManual();
+    document.getElementById("addTimeForm").onsubmit = ev => {
+      ev.preventDefault();
+      const err = addManualTime(document.getElementById("addMin").value, document.getElementById("addDate").value, document.getElementById("addSkill").value, document.getElementById("addNote").value);
+      if (err) { document.getElementById("addTimeMsg").textContent = err; toast(err, "error"); return; }
+      render(); toast("Study time added");
+    };
   });
 
   // ================= HISTORY =================
@@ -705,10 +972,15 @@
     mount(`
       <h1>Settings</h1>
       <div class="card">
-        <label class="field-label" for="nameInput">Your first name (optional)</label><input type="text" id="nameInput" value="${escapeHtml(st.name)}" autocomplete="off">
+        <label class="field-label" for="nameInput">Your first name (optional)</label><input type="text" id="nameInput" maxlength="60" value="${escapeHtml(st.name)}" autocomplete="off">
         <label class="field-label" for="targetSlider">Target level (CLB)</label><input type="range" min="4" max="12" value="${Number(st.targetCLB)}" id="targetSlider"><div class="muted small">Target: <strong id="targetVal">${Number(st.targetCLB)}</strong></div>
         <label class="field-label" for="sessionInput">Minutes for a study session</label><input type="number" id="sessionInput" min="20" max="240" value="${Number(st.sessionMin)}">
         <label class="field-label" for="hoursSlider">Hours available per week</label><input type="range" min="2" max="30" value="${Number(st.hoursPerWeek)}" id="hoursSlider"><div class="muted small">Per week: <strong id="hoursVal">${Number(st.hoursPerWeek)}</strong> hours</div>
+        <fieldset class="field-set"><legend class="field-label">Days you plan to study</legend>
+          ${DAY_ORDER.map(d => `<label class="check-item"><input type="checkbox" name="studyDay" value="${d}" ${(st.studyDays || []).includes(d) ? "checked" : ""}><span>${DAY_NAMES[d]}</span></label>`).join("")}
+        </fieldset>
+        <label class="field-label" for="studyTimeInput">Usual time of day (optional)</label><input type="time" id="studyTimeInput" value="${escapeHtml(st.studyTime || "")}">
+        <div class="muted small">Choose when and where you will study (for example, "Mon, Wed, Fri at 7:30 at the kitchen table"). A plan with a set time is easier to keep. My plan uses your days and shows your time.</div>
         <label class="field-label" for="examDateInput">Test date (optional)</label><input type="date" id="examDateInput" value="${escapeHtml(st.examDate)}">
         <div class="cta-row-single"><button class="btn btn-primary" id="saveSettings">Save</button></div>
       </div>
@@ -736,8 +1008,9 @@
     document.getElementById("targetSlider").oninput = e => document.getElementById("targetVal").textContent = e.target.value;
     document.getElementById("hoursSlider").oninput = e => document.getElementById("hoursVal").textContent = e.target.value;
     document.getElementById("saveSettings").onclick = () => {
-      Storage.saveSettings({ ...Storage.getSettings(), name: document.getElementById("nameInput").value.trim(), targetCLB: parseInt(document.getElementById("targetSlider").value), hoursPerWeek: parseInt(document.getElementById("hoursSlider").value),
-        examDate: document.getElementById("examDateInput").value, sessionMin: Math.max(20, parseInt(document.getElementById("sessionInput").value) || 75) });
+      Storage.saveSettings({ ...Storage.getSettings(), name: document.getElementById("nameInput").value.trim().slice(0, 60), targetCLB: Math.min(12, Math.max(4, parseInt(document.getElementById("targetSlider").value) || 9)), hoursPerWeek: Math.min(30, Math.max(2, parseInt(document.getElementById("hoursSlider").value) || 8)),
+        examDate: /^\d{4}-\d{2}-\d{2}$/.test(document.getElementById("examDateInput").value) ? document.getElementById("examDateInput").value : "", sessionMin: Math.min(240, Math.max(20, parseInt(document.getElementById("sessionInput").value) || 75)),
+        studyDays: Array.from(document.querySelectorAll('input[name="studyDay"]:checked')).map(c => parseInt(c.value)), studyTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(document.getElementById("studyTimeInput").value) ? document.getElementById("studyTimeInput").value : "" });
       navigate("#/dashboard");
       toast("Settings saved");
     };

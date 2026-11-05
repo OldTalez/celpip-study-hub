@@ -660,3 +660,31 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .mg-cell:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 @media (hover: hover) { .mg-cell:hover { border-color: var(--text); } }
 @media (max-width: 480px) { .mastery { border-spacing: 2px; } .mastery th[scope="row"] { width: 3.8rem; font-size: .72rem; } .mastery th[scope="col"] { font-size: .65rem; } .mg-cell b { font-size: .85rem; } }
+
+/* My plan (T-030): per-skill minute rows, the add-time form and the milestone state word. Colour never carries the meaning alone: every bar has its numbers beside it. */
+.plan-rows { list-style: none; padding: 0; margin: .75rem 0; }
+.plan-row { margin-bottom: .6rem; }
+.plan-row-top { display: flex; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.plan-add input, .plan-add select { max-width: 100%; }
+.field-set { border: 0; padding: 0; margin: 0; min-width: 0; }
+.mil-state { display: inline-block; min-width: 4.5rem; font-weight: 700; }
+
+/* ---------- 7d. T-030 turn 2: on-track words, check-in banner, Home plan card, closed add-time form ---------- */
+/* The status shows a word AND a shape (tick, clock, bar), so colour is never the only signal. Text stays in --text for contrast. */
+.status { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; }
+.status-ico { width: 1.25rem; height: 1.25rem; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.status-ontrack .status-ico { color: var(--good); }
+.status-little .status-ico, .status-behind .status-ico { color: var(--accent); }
+/* The check-in is a calm note in the page flow, not a pop-up. */
+.checkin { display: flex; gap: .75rem; align-items: flex-start; background: var(--surface); border-left: 4px solid var(--accent); border-radius: var(--radius); padding: .75rem 1rem; margin: 0 0 1rem; position: relative; z-index: 1; }
+.checkin p { margin: 0 0 .5rem; }
+.tile-plan { position: relative; }
+/* Stretched link: the heading link's ::after covers the whole card; things that must stay clickable on their own get .raised or z-index. */
+.card-link { color: inherit; text-decoration: none; }
+.card-link::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
+.card-link:focus-visible { outline: none; }
+.card-link:focus-visible::after { outline: 3px solid var(--accent); outline-offset: 2px; }
+.tile-plan .raised { position: relative; z-index: 1; }
+.plan-add-wrap { margin: .75rem 0; }
+.plan-add-wrap > summary { min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+@media (max-width: 960px) { .bento .tile-plan { grid-column: 1 / -1; } }
