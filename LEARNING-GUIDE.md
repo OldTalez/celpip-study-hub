@@ -10,7 +10,7 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 
 ## How it works, end to end
 1. `index.html` is the only page. It has a left menu (wide screens), a top bar and bottom tab bar (phones), a footer and an empty area called `app`. Before anything draws, a tiny script sets the light or dark theme.
-2. The scripts at the bottom load in a fixed order: data files, then `shell.js`, `storage.js`, `prescription.js`, `calendar.js`, `scoring.js`, `app.js`, and last `study.js`. Order matters because each file uses names defined by the ones before it.
+2. The scripts at the bottom load in a fixed order: `data/meta.js` (a small summary of the data) and `loader.js`, then `shell.js`, `storage.js`, `prescription.js`, `calendar.js`, `scoring.js`, `app.js`, and last `study.js`. Order matters because each file uses names defined by the ones before it.
 3. `app.js` is the engine: timers, speech, the microphone, the router, the multiple-choice practice, the writing and speaking runners, and the full exam.
 4. `study.js` registers the screens (dashboard, learn, review, words, grammar, notes, plan, history, settings) and adds the study tools. At the very end it calls `render()`, which draws the screen for the current address.
 5. The address after the `#` picks the screen (for example `#/review`). This is a "router". Click a link, the address changes, `render()` swaps the screen.
@@ -25,6 +25,9 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 | `js/tools.js` | The practice tools (turn B): toasts, the question dots with Flag buttons, time per question, the highlight and notes pop-up, the word-count bar and the audio progress bar. Read its LEARNING NOTE first |
 | `js/shell.js` | The frame around every screen: menu highlighting, Light / Dark / Auto theme, the More sheet, focus mode with its Exit question, header behaviour on scroll, and the lesson contents list |
 | `fonts/` | The two bundled font families as small Latin-only WOFF2 files, with their licence (`OFL.txt`) |
+| `js/loader.js` | Loads the big practice data files only when a screen needs them (T-032). Read its LEARNING NOTE first |
+| `js/data/meta.js` | Generated small summary of the data (part names, passage ids, word ids), always loaded |
+| `tools/build-meta.js` | Writes `meta.js` from the real data; `--check` compares without writing |
 | `js/app.js` | Engine: timers, speech, recording, router, practice runs, timed section, exam |
 | `js/study.js` | The study screens and the `Study` helper (explanations, mistakes, model answers) |
 | `js/calendar.js` | Builds the `.ics` calendar file from the plan: escaping, line folding, weekly repeats and reminders. Pure text in, text out |
@@ -168,3 +171,14 @@ All new material was written by AI assistants on 2026-10-22, in the style of the
 - `DEVICE-CHECKLIST.md`: what to try on a real iPhone, Android phone and computer, with boxes to tick. Glossary: **draft** = a saved, unfinished attempt; **snapshot** = a copy taken before a risky change so it can be restored.
 - Checklist: [[Celpip Test v2/DEVICE-CHECKLIST]]
 - Turn C follow-up: the Settings card no longer repeats the theme switch (one hint line instead); it lives in the menu, the folded top bar, the phone top-bar button and the More sheet.
+
+## Loading data on demand (added 2026-11-05, T-032, `js/loader.js`, `js/data/meta.js`)
+- **Why.** The practice data (passages, explanations, model answers, words, grammar, lessons) is about 1.0 MB of script files (1,009,881 bytes; about 296 KB compressed). Loading all of it before Home drew made the first visit heavy, so `index.html` no longer lists those files.
+- **`Loader.needData(["reading", "explanations"])`** returns a Promise. It adds a `<script>` tag for each file not loaded yet, runs "pools before gatherers" (a gatherer such as `reading.js` joins the pool lists when it runs), never loads a file twice, and rejects with a plain message if a file cannot be fetched. The failed file is forgotten so Retry tries again. The table of bundles is in the LEARNING NOTE at the top of `loader.js`.
+- **Routes say what they need.** `route("vocab", handler, { needs: ["vocab"], label: "Loading word cards" })`. `render()` in `app.js` asks the Loader first. If everything is already here it draws in the same moment as before. If not, the old screen is cleared at once (so it can never be seen), `#app` gets `aria-busy="true"`, and only after 150 ms a "Loading practice..." card with a spinner appears. When the files arrive, `onScreen(id)` is checked: if you went elsewhere meanwhile, nothing is drawn. On failure a heading, a message and a Retry button appear.
+- **Buttons on a screen already showing** (the Home mastery cells, the diagnostic Start buttons) use `withData(needs, fn)`: run now if loaded, else load, then run unless you moved on; a failure is an error toast, and pressing again retries.
+- **`meta.js`** holds what Home, Learn and My plan need without the pools: each skill's overview (part names, tips), every passage id with its part number and question count, and every word id. `SKILLS[i].overview` comes from it; `SKILLS[i].data` is a getter that throws a clear error if the data is not loaded yet. It is generated: after changing data run `node tools/build-meta.js`; `--check` and an e2e step both compare it with the real data.
+- **Offline is unchanged.** `sw.js` still saves every data file on install (cache `celpip-v10`) and answers script requests from the saved copy, so every route works offline after the first visit. The first visit still downloads everything once, in the background, through the service worker; what changed is what the page itself waits for.
+- **Safety.** Script addresses come only from the fixed table in `loader.js`; a name that is not in it is refused. The part after `#` is never used as a script address.
+- **Explanations load when you check answers (follow-up, same day).** Practice start loads only the passages. When you press Check Answers, `showReview` in `app.js` draws the review at once with an empty slot under each question and a "Loading explanations..." line; `fillExplanations` then fetches `explanations.js` and fills the slots. If you pressed Next Passage first, the slots are gone and nothing is drawn. On failure the line says so with a Retry button and your score stays. The full exam never shows explanations, so it does not load them; Review loads them itself.
+- **Compression.** GitHub Pages sends these files gzipped (for example `reading_pool_1.js` arrives as 29,247 bytes), so live downloads are about 30% of the sizes the local test server shows (it sends them plain).

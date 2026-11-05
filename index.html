@@ -6,7 +6,7 @@
     LEARNING NOTE (for beginners):
     This is the one and only page of the app. It holds the header, a footer and an empty main area
     (id "app"). The scripts at the bottom fill that area with Home, Learn, Practice and other screens.
-    All scripts are marked "defer" (T-031 turn C): the page shows first and the scripts run in the same order once it is read. Order matters: the question data files load first, then the generated study material (js/data/new/),
+    All scripts are marked "defer" (T-031 turn C): the page shows first and the scripts run in the same order once it is read. Order matters: the small summary of the data (data/meta.js) and the on-demand loader (loader.js) load first (T-032: the big practice files are fetched by loader.js only when a screen needs them),
     then shell.js (the frame: menus, theme switch, focus mode; it needs only the page itself), storage.js, scoring.js, app.js (the practice and exam engines) and finally study.js (the screens
     and study tools). Open this file in a browser to run the app; there is no server and no install step.
     Version 2 (2026-10-22): no outside libraries and no network calls (the old Chart.js link and the optional
@@ -165,24 +165,11 @@
     </form>
   </dialog>
 
-  <!-- Practice material (original, unofficial). Listening and reading pools first, then the files that gather them. -->
-  <script src="js/data/listening_pool_1.js" defer></script>
-  <script src="js/data/listening_pool_2.js" defer></script>
-  <script src="js/data/listening_pool_3.js" defer></script>
-  <script src="js/data/reading_pool_1.js" defer></script>
-  <script src="js/data/reading_pool_2.js" defer></script>
-  <script src="js/data/writing_speaking_pool.js" defer></script>
-  <script src="js/data/listening.js" defer></script>
-  <script src="js/data/reading.js" defer></script>
-  <script src="js/data/writing.js" defer></script>
-  <script src="js/data/speaking.js" defer></script>
-  <!-- New in v2 (generated 2026-10-22, answer keys and explanations need a human spot-check). -->
-  <script src="js/data/new/explanations.js" defer></script>
-  <script src="js/data/new/writing_models.js" defer></script>
-  <script src="js/data/new/speaking_models.js" defer></script>
-  <script src="js/data/new/vocab.js" defer></script>
-  <script src="js/data/new/grammar.js" defer></script>
-  <script src="js/data/new/lessons.js" defer></script>
+  <!-- T-032: the practice material (about 1 MB: passages, explanations, model answers, words, grammar, lessons) is NOT listed here any more.
+       js/loader.js fetches each file only when a screen needs it (original, unofficial material; the generated files still need a human spot-check).
+       meta.js is the small always-loaded summary (part names, passage ids, word ids) that Home, Learn and My plan read. -->
+  <script src="js/data/meta.js" defer></script>
+  <script src="js/loader.js" defer></script>
   <script src="js/shell.js" defer></script>
   <script src="js/profiles.js" defer></script> <!-- who is studying: the profile list, key names, migration (must come before storage.js) -->
   <script src="js/storage.js" defer></script>

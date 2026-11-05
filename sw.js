@@ -10,11 +10,12 @@
    v7 (T-031 turn A, 2026-11-05): added js/appfeel.js (install button, update notice, offline label, storage safety, badge) and the new teal icons.
    v8 (T-031 turn B, 2026-11-05): added js/shortcuts.js (keyboard shortcuts, tap buzz); js/profiles.js and js/profile-ui.js (learner profiles), js/transfer.js (share file, QR transfer), and the two QR libraries in js/vendor/ (qrcode.js to show codes, jsQR.js to read them where the browser has no BarcodeDetector).
    v9 (T-031 turn C, 2026-11-05): added js/drafts.js (practice drafts).
+   v10 (T-032, 2026-11-05): added js/loader.js and js/data/meta.js. The big practice data files are no longer in index.html (js/loader.js adds them when a screen needs them), but they stay in FILES below, so they are all saved on the first visit and every route still works offline.
    When a new version takes over, the page hears "controllerchange" and offers a Refresh button; it never reloads by itself. */
-const CACHE = "celpip-v9";
+const CACHE = "celpip-v10";
 const FILES = [
   "./", "index.html", "css/style.css", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon-180.png", "favicon.svg",
-  "js/shell.js", "js/storage.js", "js/prescription.js", "js/calendar.js", "js/appfeel.js", "js/shortcuts.js", "js/profiles.js", "js/profile-ui.js", "js/transfer.js", "js/vendor/qrcode.js", "js/vendor/jsQR.js", "js/vendor/jsQR-LICENSE.txt", "js/drafts.js", "js/scoring.js", "js/tools.js", "js/app.js", "js/study.js",
+  "js/shell.js", "js/loader.js", "js/data/meta.js", "js/storage.js", "js/prescription.js", "js/calendar.js", "js/appfeel.js", "js/shortcuts.js", "js/profiles.js", "js/profile-ui.js", "js/transfer.js", "js/vendor/qrcode.js", "js/vendor/jsQR.js", "js/vendor/jsQR-LICENSE.txt", "js/drafts.js", "js/scoring.js", "js/tools.js", "js/app.js", "js/study.js",
   "fonts/PlusJakartaSans-latin.woff2", "fonts/AtkinsonHyperlegible-Regular-latin.woff2", "fonts/AtkinsonHyperlegible-Bold-latin.woff2", "fonts/OFL.txt",
   "js/data/listening.js", "js/data/listening_pool_1.js", "js/data/listening_pool_2.js", "js/data/listening_pool_3.js",
   "js/data/reading.js", "js/data/reading_pool_1.js", "js/data/reading_pool_2.js",

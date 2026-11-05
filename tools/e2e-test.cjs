@@ -30,6 +30,8 @@ checker run inside this test. Screenshots go to the folder given as the third ar
 Extended 2026-11-05 (Nsikak, T-030 turn 1) with checks for My plan: the prescription functions run in the page with fixed inputs, settings
 save and clamp, automatic study-time counting (pauses when hidden or idle), manual time with an HTML note shown as text, the import
 cleaners for studyTime and the new settings, and the page sections.
+Extended 2026-11-05 (Nsikak, T-032): lazy data. meta.js equals the real data, Home loads no big file, each route loads exactly what it needs, leaving mid-load draws nothing old,
+a forced load failure shows Retry, script names only come from the fixed table, and offline after the first visit every route still opens.
 */
 const {chromium}=require('playwright-core');
 const BASE=process.argv[2]||'http://localhost:8790/';const SHOTS=process.argv[3]||'';
@@ -66,11 +68,13 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    if(await p.$('#playBtn')){await p.click('#playBtn');await run(2000)}
    const n=await p.$$eval('#qForm .question-block',x=>x.length);for(let i=0;i<n;i++)await p.click(`#qForm input[name=q${i}][value="0"]`);
    await p.click('#submitPassage');ok(/correct/.test(await txt('.score-line')||''),'listening: answers checked, score shown');
-   ok(await p.$$eval('.explain',x=>x.length)>0,'listening: explanations shown under questions');
+   await p.waitForSelector('.explain',{timeout:5000}).catch(()=>{});ok(await p.$$eval('.explain',x=>x.length)>0,'listening: explanations shown under questions');
    await p.click('#nextPassage');ok((await txt('.result-card h1'))==='Practice Complete','listening: result saved')});
 
  await step('reading timed section runs out',async()=>{await go('#/practice/reading');await p.click('#timedBtn');await run(1000);
-   const t1=await txt('#mcqTimer');await run(55*60*1000+2000);await p.waitForTimeout(100);
+   await p.waitForSelector('#mcqTimer',{timeout:10000});const t1=await txt('#mcqTimer');await run(55*60*1000+2000);
+   // the review is drawn the moment the clock reaches zero; on a slow machine the sped-up clock needs longer, so wait (bounded) instead of a fixed sleep
+   await p.waitForSelector('.score-line',{timeout:120000}).catch(()=>{});
    ok(/correct/.test(await txt('.score-line')||''),`reading timed: clock (${t1}) ran out and the passage was checked`);
    ok((await txt('#nextPassage'))==='Finish & See Score','reading timed: only "Finish" offered after time is up');await p.click('#nextPassage');
    const r=await txt('.result-card p');ok(/ \/ \d+ correct/.test(r||''),'reading timed: result counts the skipped passages ('+(r||'').slice(0,40)+')')});
@@ -910,7 +914,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const css=await pg.evaluate(async()=>(await fetch('css/style.css')).text());
    ok(/\.topbar \{[^}]*safe-area-inset-top/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
    ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).overscrollBehaviorY==='contain'),'overscroll-behavior-y: contain on the page (a drag down does not reload mid-exam)');
-   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v9')),'service worker cache is celpip-v9');
+   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v10')),'service worker cache is celpip-v10');
    await c.close()});
 
  await step('T-031 install button: Chrome event, iPhone steps, already installed',async()=>{
@@ -991,7 +995,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
 
  await step('T-031 icon badge',async()=>{
    const {c,pg}=await fresh({viewport:{width:1280,height:900}},()=>{window.__badge=[];navigator.setAppBadge=n=>{window.__badge.push(n);return Promise.resolve()};navigator.clearAppBadge=()=>{window.__badge.push('clear');return Promise.resolve()}});
-   await pg.evaluate(()=>{const pid=READING_DATA.passages[0].id,pid2=READING_DATA.passages[1].id;Storage.set('mistakes',{a:{skill:'reading',pid,qi:0,part:1,box:0,due:'2000-01-01',wrong:1},b:{skill:'reading',pid,qi:1,part:1,box:0,due:'2000-01-01',wrong:1},c:{skill:'reading',pid:pid2,qi:0,part:1,box:0,due:'2999-01-01',wrong:1}})});
+   await pg.evaluate(async()=>{await Loader.needData(['reading']);const pid=READING_DATA.passages[0].id,pid2=READING_DATA.passages[1].id;Storage.set('mistakes',{a:{skill:'reading',pid,qi:0,part:1,box:0,due:'2000-01-01',wrong:1},b:{skill:'reading',pid,qi:1,part:1,box:0,due:'2000-01-01',wrong:1},c:{skill:'reading',pid:pid2,qi:0,part:1,box:0,due:'2999-01-01',wrong:1}})});
    await hashGo(pg,'#/learn');
    const last=await pg.evaluate(()=>window.__badge[window.__badge.length-1]);ok(last===2&&await pg.evaluate(()=>Study.dueMistakeCount()===2),'badge: setAppBadge called with the number of mistakes due (2; one not yet due is not counted) ('+last+')');
    await pg.evaluate(()=>Storage.set('mistakes',{}));await hashGo(pg,'#/practice');
@@ -1429,6 +1433,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ok(await pg.evaluate(()=>document.querySelector('#qForm input[name="q0"][value="2"]').checked&&document.querySelector('.question-block[data-qi="1"] .flag-btn').getAttribute('aria-pressed')==='true'),'drafts: Resume puts back the chosen answer and the flag');
    // leaving by the menu (hash) also keeps it; Start fresh removes it
    await pg.evaluate(()=>{Shell.focusMode.exit()});await hashGo(pg,'#/dashboard');await hashGo(pg,'#/practice/reading');
+   await pg.waitForSelector('#draftCard',{timeout:3000}).catch(()=>{});
    ok(!!(await pg.$('#draftCard')),'drafts: leaving by another page also keeps the draft');
    await pg.click('#draftFresh');ok(!(await pg.$('#draftCard'))&&await pg.evaluate(()=>Drafts.read('reading')===null),'drafts: Start fresh removes it');
    // finishing clears
@@ -1439,6 +1444,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    await hashGo(pg,'#/practice/writing');await pg.click('#emailBtn');await pg.waitForTimeout(300);
    await pg.fill('#writingArea','Dear Sam, I am writing about the lease. Thanks.');await pg.waitForTimeout(200);
    await hashGo(pg,'#/dashboard');await hashGo(pg,'#/practice/writing');
+   await pg.waitForSelector('#draftCard',{timeout:3000}).catch(()=>{});
    ok(/Writing practice/.test(await ptxt(pg,'#draftCard')||''),'drafts: a Writing practice leaves a draft with its text');
    await pg.click('#draftResume');await pg.waitForTimeout(300);
    ok((await pg.$eval('#writingArea',t=>t.value))==='Dear Sam, I am writing about the lease. Thanks.'&&/9 words|words/.test(await ptxt(pg,'#wordCountLabel')||''),'drafts: Resume puts the written text back');
@@ -1506,6 +1512,181 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const un=await pg.evaluate(()=>{Storage.set('vocab',{keep:{box:1,due:'2030-01-01'}});const P=Object.getPrototypeOf(localStorage),rg=P.getItem;const vk=Profiles.key('celpip_vocab_v1');P.getItem=function(k){if(k===vk)throw new Error('unreadable');return rg.call(this,k)};
      const r=Storage.replaceActive({history:[]});P.getItem=rg;return {r,still:Object.keys(Storage.get('vocab',{})).join()}});
    ok(un.r===false&&un.still==='keep','N2: Replace refuses (and erases nothing) when an existing note cannot be read for a safe rollback');
+   await c.close()});
+
+ // ===== T-032: practice data loads only when a screen needs it =====
+ // lazy(): a fresh browser context WITHOUT the service worker (so every request is the page's own) that records each data file asked for.
+ const DATA_RE=/\/js\/data\/(?:new\/)?([a-z_0-9]+)\.js$/;
+ const lazy=async(opts)=>{const c=await b.newContext(Object.assign({viewport:{width:1280,height:900},serviceWorkers:'block'},opts||{}));const pg=await c.newPage();
+   const files=[];pg.on('request',r=>{const m=DATA_RE.exec(new URL(r.url()).pathname);if(m)files.push(m[1])});pg.on('pageerror',e=>errs.push(e.message));return {c,pg,files}};
+ const big=f=>f.filter(x=>x!=='meta');
+ const POOL_NAMES=['listening_pool_1','listening_pool_2','listening_pool_3','reading_pool_1','reading_pool_2','writing_speaking_pool','listening','reading','writing','speaking','writing_models','speaking_models'];
+
+ await step('T-032 meta.js matches the full data',async()=>{
+   const r=require('child_process').spawnSync(process.execPath,[require('path').join(__dirname,'build-meta.js'),'--check'],{encoding:'utf8'});
+   ok(r.status===0,'meta: tools/build-meta.js --check passes ('+(r.stdout||r.stderr).trim().slice(0,60)+')');
+   const {c,pg}=await lazy();await pg.goto(BASE);await pg.waitForTimeout(500);
+   const res=await pg.evaluate(async()=>{await Loader.needData(Loader.ALL_PRACTICE.concat(['vocab']));
+     const M=CELPIP_META,D={listening:LISTENING_DATA,reading:READING_DATA,writing:WRITING_DATA,speaking:SPEAKING_DATA};
+     const ovSame=Object.keys(D).every(k=>JSON.stringify(M.overview[k])===JSON.stringify(D[k].overview));
+     const idxSame=['listening','reading'].every(k=>{const m=M.passages[k],l=D[k].passages;return Object.keys(m).length===l.length&&l.every(p=>m[p.id]&&m[p.id][0]===p.partNum&&m[p.id][1]===p.questions.length)});
+     const vocabSame=JSON.stringify(M.vocabIds)===JSON.stringify(CELPIP_VOCAB.map(v=>v.id));
+     return {ovSame,idxSame,vocabSame,n:[Object.keys(M.passages.listening).length,Object.keys(M.passages.reading).length,M.vocabIds.length]}});
+   ok(res.ovSame,'meta: the four overviews (part names, tips) equal the real data');
+   ok(res.idxSame,'meta: every passage id, part number and question count equals the real data ('+res.n.join('/')+')');
+   ok(res.vocabSame,'meta: the word ids equal the real word list');
+   await c.close()});
+
+ await step('T-032 Home loads none of the big files',async()=>{
+   const {c,pg,files}=await lazy();await pg.goto(BASE);await pg.waitForTimeout(800);
+   ok(!!(await pg.$('#app h1')),'lazy: Home draws');
+   ok(files.join()==='meta','lazy: first load of Home requests only meta.js from js/data ('+files.join()+')');
+   const home=await pg.evaluate(()=>({tiles:document.querySelectorAll('.tile-skill').length,mastery:document.querySelectorAll('.mg-cell').length,words:(document.querySelector('a[href="#/vocab"] .tile-num')||{}).textContent,wasBusy:document.getElementById('app').hasAttribute('aria-busy')}));
+   ok(home.tiles===4&&home.mastery===10&&home.words==='285'&&!home.wasBusy,'lazy: Home shows 4 skill tiles, the mastery grid ('+home.mastery+' cells) and 285 words ready without loading the word list');
+   for(const r of ['plan','history','settings','notes']){await hashGo(pg,'#/'+r);ok(!!(await pg.$('#app h1')),'lazy: #/'+r+' draws')}
+   ok(files.join()==='meta','lazy: My plan, History, Notes and Settings load no big file ('+files.join()+')');
+   await c.close()});
+
+ await step('T-032 each route loads what it needs',async()=>{
+   const L=['listening_pool_1','listening_pool_2','listening_pool_3','listening'],R=['reading_pool_1','reading_pool_2','reading'];
+   const cases=[['#/practice/listening',L],['#/practice/reading',R],['#/practice/writing',['writing_speaking_pool','writing','writing_models']],['#/practice/speaking',['writing_speaking_pool','speaking','speaking_models']],
+     ['#/learn',['lessons']],['#/learn/reading',['lessons']],['#/vocab',['vocab']],['#/grammar',['grammar']],['#/exam',['writing_speaking_pool','speaking']],['#/exam/run',POOL_NAMES],['#/practice',[]],['#/diagnostic',[]]];
+   for(const [h,want] of cases){
+     const {c,pg,files}=await lazy();await pg.goto(BASE+h);await pg.waitForTimeout(h==='#/exam/run'?2500:1500);
+     const got=big(files).sort(),exp=want.slice().sort();
+     ok(got.join()===exp.join(),`route ${h} loads exactly ${exp.length} data file(s) (${got.join(' ')||'none'})`);
+     ok(!!(await pg.$('#app h1, #app .run-header, #app .task-bar, #app .exam-banner'))&&!(await pg.$('#loadRetry'))&&!(await pg.$('.loading-card')),`route ${h} has drawn (no spinner, no error)`);
+     await c.close()}
+   {const {c,pg,files}=await lazy();await pg.goto(BASE+'#/practice/reading');await pg.waitForTimeout(1200);await pg.click('#quickBtn');await pg.waitForTimeout(300);
+    ok(!!(await pg.$('#qForm')),'lazy: Reading practice starts and shows questions');
+    await pg.evaluate(()=>{document.querySelector('#qForm input[name="q0"]').click()});
+    ok(!files.includes('explanations'),'explanations: starting a Reading practice does not request the explanations file');
+    await pg.click('#submitPassage');await pg.waitForSelector('.explain',{timeout:5000}).catch(()=>{});
+    ok(files.includes('explanations')&&await pg.$$eval('.explain',x=>x.length)>0&&!(await pg.$('#explainStatus')),'explanations: checking the answers loads the file and shows explanations under the questions');
+    await pg.click('#nextPassage');await c.close()}
+   {const {c,pg}=await lazy();await pg.goto(BASE+'#/practice/writing');await pg.waitForTimeout(1000);await pg.click('#emailBtn');await pg.waitForTimeout(200);
+    ok(!!(await pg.$('#writingArea')),'lazy: Writing practice starts after its lazy load');await c.close()}
+   {const {c,pg}=await lazy();await pg.goto(BASE+'#/practice/speaking');await pg.waitForTimeout(1000);await pg.click('#randomBtn');await pg.waitForTimeout(400);
+    ok(!!(await pg.$('#app h1, #app .run-header')),'lazy: Speaking practice starts after its lazy load');await c.close()}
+   for(const sk of ['listening','reading','writing','speaking']){
+     const {c,pg,files}=await lazy();await pg.goto(BASE+'#/diagnostic');await pg.waitForTimeout(800);
+     ok(big(files).length===0,`diagnostic: the page itself loads no data (${sk})`);
+     await pg.click(`[data-diag="${sk}"]`);await pg.waitForTimeout(1500);
+     ok(files.includes(sk)&&!files.includes(sk==='listening'?'reading':'listening'),`diagnostic: Start ${sk} loads ${sk} (${big(files).join(' ')})`);
+     ok(!(await pg.$('[data-diag]'))&&!(await pg.$('#loadRetry')),`diagnostic: ${sk} diagnostic left the chooser and is running`);
+     await c.close()}
+   {const {c,pg,files}=await lazy();await pg.goto(BASE);await pg.waitForTimeout(500);
+    await pg.evaluate(()=>{const pid=Object.keys(CELPIP_META.passages.reading)[0];Storage.set('mistakes',{a:{skill:'reading',pid,qi:0,part:1,box:0,due:'2000-01-01',wrong:1}})});
+    await hashGo(pg,'#/dashboard');
+    ok((await pg.$eval('a[href="#/review"] .tile-num',e=>e.textContent))==='1'&&big(files).length===0,'Home: one due mistake counted from the summary, nothing big loaded');
+    await hashGo(pg,'#/review');await pg.waitForTimeout(1200);
+    ok(files.includes('reading')&&files.includes('explanations')&&!files.includes('listening'),'review: with one Reading mistake due only Reading and explanations load ('+big(files).join(' ')+')');
+    ok(/Review 1 of 1/.test(await ptxt(pg,'.run-header')||''),'review: the mistake is shown after loading');
+    await c.close()}
+   {const {c,pg,files}=await lazy();await pg.goto(BASE);await pg.waitForTimeout(500);
+    await pg.click('.mg-cell[data-skill="listening"][data-part="1"]');await pg.waitForTimeout(1800);
+    ok(files.includes('listening')&&!!(await pg.$('#qForm')),'Home: a mastery cell loads Listening and starts that part');await c.close()}
+ });
+
+ await step('T-032 leaving mid-load draws nothing old; the loading state',async()=>{
+   const {c,pg}=await lazy();
+   await pg.route('**/js/data/reading_pool_2.js',async r=>{await new Promise(x=>setTimeout(x,1500));await r.continue()});
+   await pg.goto(BASE);await pg.waitForTimeout(500);
+   await pg.evaluate(()=>{location.hash='#/practice/reading'});await pg.waitForTimeout(500);
+   const busy=await pg.evaluate(()=>{const k=document.querySelector('.loading-card');return {busy:document.getElementById('app').getAttribute('aria-busy'),card:k&&k.textContent,role:k&&k.getAttribute('role'),h1:!!document.querySelector('#app h1')}});
+   ok(busy.busy==='true'&&/Loading practice/.test(busy.card||'')&&busy.role==='status'&&!busy.h1,'loading: after 150 ms the page says "Loading practice..." with aria-busy and no old screen ('+(busy.card||'').trim()+')');
+   if(SHOTS)await pg.screenshot({path:SHOTS+'t032-loading.png'});
+   await pg.evaluate(()=>{location.hash='#/settings'});await pg.waitForTimeout(2200);
+   const after=await pg.evaluate(()=>({h1:(document.querySelector('#app h1')||{}).textContent,qb:!!document.getElementById('quickBtn'),busy:document.getElementById('app').hasAttribute('aria-busy'),card:!!document.querySelector('.loading-card')}));
+   ok(after.h1==='Settings'&&!after.qb&&!after.busy&&!after.card,'loading: moving to Settings mid-load leaves Settings showing; the Reading screen is never drawn ('+after.h1+')');
+   await pg.evaluate(()=>{location.hash='#/practice/reading'});await pg.waitForTimeout(300);
+   ok(!!(await pg.$('#quickBtn')),'loading: the files that arrived late are kept; Reading then opens at once');
+   await c.close();
+   const q=await lazy();await q.pg.goto(BASE+'#/vocab');await q.pg.waitForTimeout(1000);
+   const same=await q.pg.evaluate(()=>{render();return {busy:document.getElementById('app').hasAttribute('aria-busy'),h1:!!document.querySelector('#app h1')}});
+   ok(same.h1&&!same.busy,'loading: with the data already here render() draws at once (no waiting state)');
+   await q.c.close()});
+
+ await step('T-032 a failed load shows Retry',async()=>{
+   const {c,pg}=await lazy();
+   let fail=true;await pg.route('**/js/data/reading_pool_2.js',r=>fail?r.abort('connectionfailed'):r.continue());
+   await pg.goto(BASE);await pg.waitForTimeout(500);
+   await pg.evaluate(()=>{location.hash='#/practice/reading'});await pg.waitForTimeout(800);
+   const e=await pg.evaluate(()=>{const k=document.querySelector('.load-error');return {txt:k&&k.textContent,role:k&&k.getAttribute('role'),btn:!!document.getElementById('loadRetry'),busy:document.getElementById('app').hasAttribute('aria-busy'),h1:(document.querySelector('#app h1')||{}).textContent}});
+   ok(e.btn&&e.role==='alert'&&/could not be loaded/.test(e.txt||'')&&!e.busy&&!!e.h1,'failure: a plain message, a heading and a Retry button with role=alert ('+(e.h1||'')+')');
+   if(SHOTS)await pg.screenshot({path:SHOTS+'t032-load-error.png'});
+   fail=false;await pg.click('#loadRetry');await pg.waitForTimeout(1500);
+   ok(!!(await pg.$('#quickBtn'))&&!(await pg.$('#loadRetry')),'failure: Retry fetches the failed file again and the screen opens');
+   await c.close();
+   const h=await lazy();let fail2=true;await h.pg.route('**/js/data/listening_pool_3.js',r=>fail2?r.abort('connectionfailed'):r.continue());
+   await h.pg.goto(BASE);await h.pg.waitForTimeout(500);
+   await h.pg.evaluate(()=>{window.__t=[];new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{if(n.classList&&n.classList.contains('toast'))window.__t.push(n.textContent)}))).observe(document.getElementById('toastHost'),{childList:true,subtree:true})});
+   await h.pg.click('.mg-cell[data-skill="listening"][data-part="1"]');await h.pg.waitForTimeout(800);
+   const ts=await h.pg.evaluate(()=>window.__t);
+   ok(ts.some(t=>/could not be loaded/.test(t)&&/Press the button again/.test(t))&&!(await h.pg.$('#qForm')),'failure: a Home button shows an error toast and stays on Home');
+   fail2=false;await h.pg.click('.mg-cell[data-skill="listening"][data-part="1"]');await h.pg.waitForTimeout(1800);
+   ok(!!(await h.pg.$('#qForm')),'failure: pressing the Home button again retries and starts the practice');
+   await h.c.close()});
+
+ await step('T-032 script addresses come only from the fixed table',async()=>{
+   const {c,pg,files}=await lazy();await pg.goto(BASE);await pg.waitForTimeout(500);
+   const rej=await pg.evaluate(async()=>{const out=[];for(const n of ['__proto__','constructor','../../evil','js/data/reading.js','http://x.test/a.js',42,null]){try{await Loader.needData([n]);out.push('LOADED')}catch(e){out.push('refused')}}return out});
+   ok(rej.every(x=>x==='refused'),'security: Loader refuses names that are not in its table ('+rej.join()+')');
+   for(const h of ['#/practice/__proto__','#/practice/..%2f..%2fevil','#/learn/constructor','#/exam/%3Cscript%3E','#/__proto__']){await hashGo(pg,h);await pg.waitForTimeout(400)}
+   const extra=big(files).filter(f=>f!=='lessons'&&f!=='speaking'&&f!=='writing_speaking_pool');
+   ok(extra.length===0,'security: odd addresses in the # part add no script beyond the routes own table entries (extra files: '+extra.join(' ')+')');
+   const tags=await pg.evaluate(()=>[...document.querySelectorAll('script[src]')].map(s=>s.getAttribute('src')).filter(s=>/js\/data\//.test(s)));
+   ok(tags.every(s=>/^js\/data\/(new\/)?[a-z_0-9]+\.js$/.test(s)),'security: every data script tag in the page is a plain relative file from the table ('+tags.join(' ')+')');
+   await c.close()});
+
+ await step('T-032 offline after the first visit still opens every route',async()=>{
+   const c=await b.newContext({viewport:{width:1280,height:900}});const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));
+   await pg.goto(BASE);
+   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v10')&&(await (await caches.open('celpip-v10')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
+   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v10');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
+   ok(cached.length===18&&cached.every(Boolean),'offline: sw.js saved all 16 data files plus loader.js and meta.js on the first visit ('+cached.filter(Boolean).length+' of '+cached.length+')');
+   await pg.reload();await pg.waitForTimeout(800);
+   ok(await pg.evaluate(()=>!!navigator.serviceWorker.controller),'offline: the page is controlled by the service worker');
+   await pg.evaluate(()=>{const pid=Object.keys(CELPIP_META.passages.reading)[0];Storage.set('mistakes',{a:{skill:'reading',pid,qi:0,part:1,box:0,due:'2000-01-01',wrong:1}})});
+   await c.setOffline(true);
+   await pg.reload();await pg.waitForTimeout(1000);
+   for(const r of ['dashboard','learn','learn/listening','learn/reading','learn/writing','learn/speaking','practice','practice/listening','practice/reading','practice/writing','practice/speaking','exam','diagnostic','review','vocab','grammar','notes','plan','history','settings','exam/run']){
+     await pg.evaluate(h=>{if(location.hash===h)render();else location.hash=h},'#/'+r);await pg.waitForTimeout(r==='exam/run'?1500:700);
+     const st=await pg.evaluate(()=>({h1:!!document.querySelector('#app h1, #app .run-header, #app .task-bar, #app h2'),err:!!document.getElementById('loadRetry'),busy:document.getElementById('app').hasAttribute('aria-busy')}));
+     ok(st.h1&&!st.err&&!st.busy,`offline: #/${r} opens (data from the saved copy)`)}
+   await pg.evaluate(()=>{window.onbeforeunload=null;location.hash='#/practice/reading'});await pg.waitForTimeout(500);await pg.click('#quickBtn');await pg.waitForTimeout(300);
+   ok(!!(await pg.$('#qForm')),'offline: a Reading practice starts and shows questions');
+   await pg.click('#submitPassage');await pg.waitForSelector('.explain',{timeout:5000}).catch(()=>{});
+   ok(await pg.$$eval('.explain',x=>x.length)>0,'offline: checking answers still shows the explanations (file from the saved copy)');
+   await c.setOffline(false);await c.close()});
+
+
+ await step('T-032 explanations: failure shows Retry under the score',async()=>{
+   const {c,pg}=await lazy();let fail=true;await pg.route('**/js/data/new/explanations.js',r=>fail?r.abort('connectionfailed'):r.continue());
+   await pg.goto(BASE+'#/practice/listening');await pg.waitForTimeout(1500);await pg.click('#quickBtn');await pg.waitForTimeout(300);
+   await pg.click('#submitPassage');await pg.waitForTimeout(800);
+   const st=await pg.evaluate(()=>{const e=document.getElementById('explainStatus');return {t:e&&e.textContent,btn:!!(e&&e.querySelector('button')),score:/correct/.test((document.querySelector('.score-line')||{}).textContent||''),n:document.querySelectorAll('.explain').length}});
+   const en=await pg.evaluate(()=>{const e=document.getElementById('explainStatusEnd'),f=document.getElementById('nextPassage');return {t:e&&e.textContent,btn:!!(e&&e.querySelector('button')),role:e&&e.getAttribute('role'),same:!!e&&e.parentElement===f.parentElement}});
+   ok(st.score&&st.btn&&/could not be loaded/.test(st.t||'')&&st.n===0,'explanations: when the file fails the score and answers stay, a message and Retry appear near the score');
+   ok(en.btn&&en.same&&en.role==='status'&&/could not be loaded/.test(en.t||''),'explanations: the same message and a Retry button also sit beside the Next / Finish button (role=status)');
+   if(SHOTS){await pg.evaluate(()=>window.scrollTo(0,0));await pg.screenshot({path:SHOTS+'t032-explain-error-top.png'});await pg.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await pg.waitForTimeout(200);await pg.screenshot({path:SHOTS+'t032-explain-error-bottom.png'})}
+   fail=false;await pg.click('#explainStatusEnd button');await pg.waitForSelector('.explain',{timeout:5000}).catch(()=>{});
+   ok(await pg.$$eval('.explain',x=>x.length)>0&&!(await pg.$('#explainStatus'))&&!(await pg.$('#explainStatusEnd')),'explanations: Retry loads them and fills the slots');
+   await c.close()});
+
+
+ await step('T-032 time runs out while explanations are still loading',async()=>{
+   const {c,pg}=await lazy();
+   await pg.addInitScript(()=>{const F=100,st=window.setTimeout.bind(window),si=window.setInterval.bind(window);window.setTimeout=(f,d,...a)=>st(f,(d||0)/F,...a);window.setInterval=(f,d,...a)=>si(f,(d||0)/F,...a)});
+   await pg.route('**/js/data/new/explanations.js',async r=>{await new Promise(x=>setTimeout(x,6000));await r.continue()});
+   await pg.goto(BASE+'#/practice/reading');await pg.waitForSelector('#timedBtn',{timeout:15000});await pg.click('#timedBtn');
+   await pg.waitForSelector('#mcqTimer',{timeout:10000});
+   ok(await pg.evaluate(()=>typeof Loader!=='undefined'&&!Loader.isLoaded(['explanations'])),'timed: the explanations file is not loaded while the clock runs');
+   await pg.waitForSelector('.score-line',{timeout:120000});
+   const r=await pg.evaluate(()=>({score:/correct/.test(document.querySelector('.score-line').textContent),btn:(document.getElementById('nextPassage')||{}).textContent,loading:!!document.getElementById('explainStatus')}));
+   ok(r.score&&r.btn==='Finish & See Score'&&r.loading,'timed: time up with explanations still loading shows the score, "Finish & See Score" and the loading line');
+   await pg.click('#nextPassage');await pg.waitForSelector('.result-card h1',{timeout:5000}).catch(()=>{});
+   ok(/Practice Complete/.test(await ptxt(pg,'.result-card h1')||''),'timed: Finish works before the explanations arrive');
    await c.close()});
 
  console.log(`\n${fails} failure(s)`);await b.close();process.exit(fails?1:0)})();

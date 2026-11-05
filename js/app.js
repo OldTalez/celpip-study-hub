@@ -7,6 +7,8 @@
 // screen, and render() clears the page and runs the handler for the current address.
 // Screens are built by pasting HTML text into the page with el(`...`). Anything typed by a
 // user is passed through escapeHtml first, so it shows as text and cannot run as code.
+// T-032: the big practice data is no longer loaded up front. js/loader.js fetches it when a route needs it (see route(), render() and
+// withData() below); js/data/meta.js is the small always-loaded summary. SKILLS[i].overview is always there, SKILLS[i].data only after loading.
 // Reading order: utilities, timer, speech and recording helpers, router, then one section per screen.
 // The frame around the screens (menus, theme, focus mode) lives in js/shell.js, which loads first; this file calls it
 // through the Shell object when a screen is drawn and when a practice run or the exam starts or ends.
@@ -23,11 +25,19 @@ function skillIcon(id) {
   return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + p + "</svg>";
 }
 
+// T-032: the big practice data (passages, prompts) is loaded on demand by js/loader.js, so `data` below is a getter that only
+// works once a screen has asked for it (Loader.needData). `overview` (part names, tips) is always here, from the small
+// js/data/meta.js. A screen that touches `.data` too early gets a clear error instead of a quiet blank.
+// A "getter" (get data() {...}) is a property that runs a little function each time it is read.
+function loadedData(skillId, data) {
+  if (!data) throw new Error("Practice data for " + skillId + " is not loaded yet: call Loader.needData first");
+  return data;
+}
 const SKILLS = [
-  { id: "listening", name: "Listening", icon: skillIcon("listening"), data: LISTENING_DATA },
-  { id: "reading", name: "Reading", icon: skillIcon("reading"), data: READING_DATA },
-  { id: "writing", name: "Writing", icon: skillIcon("writing"), data: WRITING_DATA },
-  { id: "speaking", name: "Speaking", icon: skillIcon("speaking"), data: SPEAKING_DATA }
+  { id: "listening", name: "Listening", icon: skillIcon("listening"), overview: CELPIP_META.overview.listening, get data() { return loadedData("listening", typeof LISTENING_DATA !== "undefined" ? LISTENING_DATA : null); } },
+  { id: "reading", name: "Reading", icon: skillIcon("reading"), overview: CELPIP_META.overview.reading, get data() { return loadedData("reading", typeof READING_DATA !== "undefined" ? READING_DATA : null); } },
+  { id: "writing", name: "Writing", icon: skillIcon("writing"), overview: CELPIP_META.overview.writing, get data() { return loadedData("writing", typeof WRITING_DATA !== "undefined" ? WRITING_DATA : null); } },
+  { id: "speaking", name: "Speaking", icon: skillIcon("speaking"), overview: CELPIP_META.overview.speaking, get data() { return loadedData("speaking", typeof SPEAKING_DATA !== "undefined" ? SPEAKING_DATA : null); } }
 ];
 const skillById = id => SKILLS.find(s => s.id === id);
 
@@ -273,17 +283,54 @@ const Transcriber = (() => {
 // ---------- Router ----------
 const app = document.getElementById("app");
 const routes = {};
-function route(pattern, handler) { routes[pattern] = handler; }
+// T-032: a route can say which data bundles it needs (names from js/loader.js). `needs` is a list, or a function that is given
+// the rest of the address (for example ["reading"] for #/practice/reading) and returns a list. `label` is the words shown if
+// loading is slow ("Loading practice..."). A route with no `needs` draws at once.
+const routeNeeds = {};
+function route(pattern, handler, opts) { routes[pattern] = handler; if (opts) routeNeeds[pattern] = opts; }
 function navigate(hash) { window.location.hash = hash; }
 function currentRoute() { return (window.location.hash || "#/dashboard").slice(1); }
 
 // screenId goes up by one every time a new screen is drawn. Work that finishes later (speech ending, a recording being
-// saved) checks that the screen it belongs to is still showing (onScreen(id)) before it draws anything, so it can never
-// take over a page you moved to.
+// saved, a data file arriving) checks that the screen it belongs to is still showing (onScreen(id)) before it draws anything,
+// so it can never take over a page you moved to.
 let screenId = 0;
 function onScreen(id) { return id === screenId; }
+
+// The data a screen needs: always a list of names the Loader knows. A bad address (for example #/practice/__proto__) gives none.
+function needsFor(name, rest) {
+  const o = Object.hasOwn(routeNeeds, name) ? routeNeeds[name] : null;
+  const list = o ? (typeof o.needs === "function" ? o.needs(rest) : o.needs) : [];
+  return Array.isArray(list) ? list : [];
+}
+function labelFor(name) { return Object.hasOwn(routeNeeds, name) && routeNeeds[name].label ? routeNeeds[name].label : "Loading"; }
+// What a skill's practice needs (its passages or prompts, plus the explanations or model answers shown after an answer).
+function needsForSkill(id) { return Object.hasOwn(Loader.SKILL_NEEDS, id) ? Loader.SKILL_NEEDS[id] : []; }
+
+// Run `fn` once the data is here. For a button on a screen that is already showing (a Home tile that starts a practice):
+// if the data is loaded, `fn` runs at once; otherwise it runs when the data arrives, unless you have moved on by then.
+// A failure shows an error toast; pressing the button again tries again.
+function withData(needs, fn) {
+  if (Loader.isLoaded(needs)) return fn();
+  const myScreen = screenId;
+  toast("Loading practice...", "info");
+  Loader.needData(needs).then(() => { if (onScreen(myScreen)) fn(); },
+    err => { if (onScreen(myScreen)) toast(err.message + " Press the button again to retry.", "error"); });
+}
+
+// The loading skeleton (shown only if loading takes more than 150 ms) and the error panel with Retry.
+const LOADING_SKELETON_MS = 150;
+function showSkeleton(label) {
+  app.innerHTML = '<div class="loading-card" role="status"><span class="spinner" aria-hidden="true"></span><p>' + escapeHtml(label) + '...</p></div>';
+}
+function showLoadError(err) {
+  app.innerHTML = '<h1>This page could not load</h1><div class="card load-error" role="alert"><p>' + escapeHtml(err && err.loadFailed ? err.message : "Something went wrong while loading this page.") +
+    '</p><p class="muted small">Once you have opened it online, it is saved on this device and works offline.</p><button type="button" class="btn btn-primary" id="loadRetry">Retry</button></div>';
+  document.getElementById("loadRetry").onclick = () => render();
+}
+
 function render() {
-  screenId++;
+  const myScreen = ++screenId;
   Speech.stop();
   stopAllTimers();
   PassageTools.detach();         // the selection pop-up and note tip belong to the old screen
@@ -296,12 +343,24 @@ function render() {
   const parts = path.split("/").filter(Boolean);
   const top = parts[0] || "dashboard";
   Shell.beforeRender(top);       // ends focus mode, closes the More sheet, marks the current menu item
-  const handler = Object.hasOwn(routes, top) ? routes[top] : null;   // hasOwn: "#/__proto__" or "#/constructor" must not find the plain object's own members
-  app.innerHTML = "";
-  if (handler) handler(parts.slice(1));
-  else routes["dashboard"]([]);
-  Shell.afterRender();           // marks the screen title, fills the theme switches
-  window.scrollTo(0, 0);
+  const known = Object.hasOwn(routes, top);   // hasOwn: "#/__proto__" or "#/constructor" must not find the plain object's own members
+  const name = known ? top : "dashboard", rest = known ? parts.slice(1) : [];
+  app.innerHTML = "";            // the old screen goes now, so it can never be seen while new data loads
+  app.removeAttribute("aria-busy");
+  const draw = () => { routes[name](rest); Shell.afterRender(); window.scrollTo(0, 0); };   // afterRender marks the screen title, fills the theme switches
+  const needs = needsFor(name, rest);
+  if (Loader.isLoaded(needs)) return draw();   // nothing to wait for: draw in the same moment, as before
+  app.setAttribute("aria-busy", "true");
+  const slow = setTimeout(() => { if (onScreen(myScreen)) showSkeleton(labelFor(name)); }, LOADING_SKELETON_MS);
+  Loader.needData(needs).then(() => {
+    clearTimeout(slow);
+    if (!onScreen(myScreen)) return;           // you went elsewhere while the files were coming: draw nothing
+    app.removeAttribute("aria-busy"); app.innerHTML = ""; draw();
+  }, err => {
+    clearTimeout(slow);
+    if (!onScreen(myScreen)) return;
+    app.removeAttribute("aria-busy"); showLoadError(err); Shell.afterRender();
+  });
 }
 
 // Screen changes use the View Transitions API: the browser fades the old screen out and the new one in (the CSS in
@@ -314,7 +373,7 @@ function goToRoute() {
   const html = document.documentElement;
   html.classList.add("vt-route");  // the CSS only animates the screen while this class is on
   const done = () => html.classList.remove("vt-route");
-  const t = document.startViewTransition(() => render());
+  const t = document.startViewTransition(() => { render(); });  // no return value: the fade must not wait for slow data
   t.finished.then(done, done);
 }
 window.addEventListener("hashchange", goToRoute);
@@ -351,7 +410,7 @@ route("practice", (rest) => {
       </a>`).join("")}
     </section>
   `));
-});
+}, { needs: rest => (rest[0] ? needsForSkill(rest[0]) : []), label: "Loading practice" });   // T-032: the chosen skill's passages or prompts, plus its model answers (Writing, Speaking)
 
 // "Resume where you left off?" card (T-031 turn C): shown at the top of a practice screen when js/drafts.js holds a draft for it.
 function draftCard(kind, label, onResume) {
@@ -566,10 +625,14 @@ function runMcqPractice(skill, passageList, opts = {}, resume = null) {
     const order = passage.questions.map((q, i) => i).sort((a, b) => (flags[b] ? 1 : 0) - (flags[a] ? 1 : 0));
     if (window.Study) Study.recordMcq(skill.id, passage, answers, "practice");
     const correctCount = passage.questions.filter((q, i) => answers[i] === q.answer).length;
+    // T-032: the explanations (a big file) are fetched now, when the learner checks answers, not when the practice starts.
+    // The review is drawn at once with an empty slot under each question; the slots are filled when the file has arrived.
+    const explainReady = Loader.isLoaded(["explanations"]);
     app.innerHTML = "";
     app.appendChild(el(`
       <h2>${passage.title} — Review</h2>
       <p class="score-line">${correctCount} / ${passage.questions.length} correct</p>
+      ${explainReady ? "" : '<p class="explain-status" id="explainStatus" role="status">Loading explanations...</p>'}
       ${order.map(qi => {
         const q = passage.questions[qi];
         const correct = answers[qi] === q.answer;
@@ -584,18 +647,44 @@ function runMcqPractice(skill, passageList, opts = {}, resume = null) {
               return `<div class="option static ${cls}">${escapeHtml(opt)}</div>`;
             }).join("")}
           </div>
-          ${window.Study ? Study.explanationHtml(passage, qi, correct) : ""}
+          <div class="explain-slot" data-qi="${qi}">${explainReady && window.Study ? Study.explanationHtml(passage, qi, correct) : ""}</div>
         </div>`;
       }).join("")}
       <div class="run-footer">
+        ${explainReady ? "" : '<p class="explain-status" id="explainStatusEnd" role="status">Loading explanations...</p>'}
         <button class="btn btn-primary" id="nextPassage">${pIndex + 1 < passageList.length && !timeUp ? "Next Passage" : "Finish & See Score"}</button>
       </div>
     `));
+    if (!explainReady) fillExplanations(passage, answers);
     document.getElementById("nextPassage").onclick = () => {
       pIndex++;
       if (pIndex < passageList.length && !timeUp) renderPassage();
       else finishPractice();
     };
+  }
+
+  // Loads the explanations file, then fills the slots under the questions. If you pressed Next Passage before it arrived, the slots are
+  // gone and nothing is drawn. The status line appears twice, near the score at the top and beside the Next / Finish button, so a
+  // failure is seen wherever the learner has scrolled to. On failure both say so and offer Retry; the answers and score stay as they are.
+  // (This runs after the review is drawn, so time running out never waits for it: the score and "Finish & See Score" are already there.)
+  function fillExplanations(passage, answers) {
+    const lines = () => [...app.querySelectorAll(".explain-status")];
+    Loader.needData(["explanations"]).then(() => {
+      lines().forEach(l => l.remove());
+      app.querySelectorAll(".explain-slot").forEach(slot => {
+        const qi = parseInt(slot.dataset.qi);
+        if (window.Study) slot.innerHTML = Study.explanationHtml(passage, qi, answers[qi] === passage.questions[qi].answer);
+      });
+    }, err => {
+      lines().forEach(l => {
+        l.classList.add("explain-failed");
+        l.textContent = err.message + " ";
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn btn-sm"; b.textContent = "Retry";
+        b.onclick = () => { lines().forEach(x => { x.classList.remove("explain-failed"); x.textContent = "Loading explanations..."; }); fillExplanations(passage, answers); };
+        l.appendChild(b);
+      });
+    });
   }
 
   function finishPractice() {
@@ -988,8 +1077,8 @@ function sampleExamWriting(pool) {
 
 route("exam", (rest) => {
   if (rest[0] === "run") return startFullExam();
-  const listeningParts = LISTENING_DATA.overview.parts.length;
-  const readingParts = READING_DATA.overview.parts.length;
+  const listeningParts = skillById("listening").overview.parts.length;   // from the always-loaded summary (T-032)
+  const readingParts = skillById("reading").overview.parts.length;
   const speakingSample = sampleOnePerSpeakingTask(SPEAKING_DATA.prompts);
   const totalMin = Math.round(
     50 + // listening (official ~47-55 min)
@@ -1013,7 +1102,7 @@ route("exam", (rest) => {
       <div class="cta-row-single"><a class="btn btn-primary" href="#/exam/run">Begin Full Exam</a></div>
     </div>
   `));
-});
+}, { needs: rest => (rest[0] === "run" ? Loader.ALL_PRACTICE : ["speaking"]), label: "Loading the exam" });   // T-032: the intro only samples Speaking prompts to add up the time; the run needs everything
 
 function startFullExam() {
   const results = { listening: null, reading: null, writing: [], speaking: [] };

@@ -758,3 +758,17 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .qr-ctrl select { min-height: 44px; }
 .kbd-only { text-align: left; }
 .qr-box [hidden], .who-dlg [hidden] { display: none !important; }
+
+/* T-032: loading state (shown only if the practice files take more than 150 ms) and the load-error panel.
+   The spinner is a ring with one coloured quarter. With reduced motion it does not turn: the words "Loading" carry the message. */
+.loading-card { display: flex; align-items: center; gap: 14px; margin: 24px 0; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text); }
+.loading-card p { margin: 0; font-weight: 700; }
+.spinner { flex: none; width: 24px; height: 24px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.load-error { max-width: 36rem; }
+
+/* T-032: the "Loading explanations..." line, shown near the score and beside Next / Finish. A failure is boxed and has a Retry button, so it is seen wherever you have scrolled. */
+.explain-status { margin: 8px 0; color: var(--muted); font-size: 0.9rem; }
+.explain-status.explain-failed { color: var(--text); padding: 10px 12px; border: 2px solid var(--bad); border-radius: 10px; background: var(--surface); font-weight: 600; }
+.run-footer .explain-status { flex-basis: 100%; }

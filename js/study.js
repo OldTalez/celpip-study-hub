@@ -21,6 +21,8 @@
  * T-029 turn A (2026-11-05): the Learn screens got a contents list ("On this page", built by Shell.contents in js/shell.js),
  * Settings got the Light / Dark / Auto theme switch and a visible On/Off word on the transcripts switch, and the old
  * header theme button code was removed (js/shell.js owns the theme now).
+ * T-032 (2026-11-05): Home, Learn and My plan read part names, passage ids and word ids from CELPIP_META (js/data/meta.js), so they need no big
+ * data file. Screens that show passages, words, grammar or lessons say so in route(..., { needs }) and the Loader fetches the files first.
  */
 (function () {
   "use strict";
@@ -37,9 +39,15 @@
 
   function mount(html) { app.appendChild(el(html)); }
   function setPageTitle(t) { document.title = t + " | CELPIP Study Hub"; app.focus({ preventScroll: true }); }
+  // The full passage. Only call it on a screen that asked the Loader for "listening" / "reading" (T-032).
   function passageFor(skill, pid) {
     const list = skill === "listening" ? LISTENING_DATA.passages : READING_DATA.passages;
     return list.find(p => p.id === pid) || null;
+  }
+  // Does this passage exist? Answered from the small always-loaded summary (CELPIP_META), so Home can count due mistakes
+  // without downloading any passage. Same rule as passageFor: any skill other than "listening" is looked up in Reading.
+  function passageKnown(skill, pid) {
+    return Object.hasOwn(CELPIP_META.passages[skill === "listening" ? "listening" : "reading"], pid);
   }
   function download(filename, text, type) {
     const blob = new Blob([text], { type: type || "text/plain" });
@@ -125,7 +133,12 @@
   // ---------- Derived numbers ----------
   function dueMistakes() {
     const t = today();
-    return Object.values(getMistakes()).filter(m => m.due <= t && passageFor(m.skill, m.pid)).sort((a, b) => a.due.localeCompare(b.due));
+    return Object.values(getMistakes()).filter(m => m.due <= t && passageKnown(m.skill, m.pid)).sort((a, b) => a.due.localeCompare(b.due));
+  }
+  // Review shows full passages and explanations, so it loads Listening and/or Reading, but only the skills that have a mistake due.
+  function reviewNeeds() {
+    const skills = new Set(dueMistakes().map(m => (m.skill === "listening" ? "listening" : "reading")));
+    return skills.size ? [...skills].concat("explanations") : [];
   }
   function weakSpots(limit) {
     const stats = getPartStats();
@@ -137,7 +150,7 @@
   function vocabState() { return Storage.get("vocab", {}); }
   function vocabDue() {
     const st = vocabState(), t = today();
-    return (window.CELPIP_VOCAB || []).filter(v => !st[v.id] || st[v.id].due <= t);
+    return CELPIP_META.vocabIds.filter(id => !st[id] || st[id].due <= t);   // ids from the summary: Home counts due words without loading the word list (T-032)
   }
   function studyDays() {
     const days = new Set(Storage.getHistory().map(h => ymd(h.date)));
@@ -307,9 +320,9 @@
       if (h.skill !== "reading" || !Array.isArray(h.passageIds)) return;
       let at = 0;
       h.passageIds.forEach(pid => {
-        const ps = skillById("reading").data.passages.find(x => x.id === pid);
+        const ps = Object.hasOwn(CELPIP_META.passages.reading, pid) ? CELPIP_META.passages.reading[pid] : null;   // [part number, question count] (T-032)
         if (!ps) return;
-        const part = ps.partNum, n = ps.questions.length, chunk = h.timing.perQuestionSec.slice(at, at + n).filter(v => v > 0);
+        const part = ps[0], n = ps[1], chunk = h.timing.perQuestionSec.slice(at, at + n).filter(v => v > 0);
         at += n;
         if (chunk.length && part >= 1 && part <= PACE_GUIDE.length) { const o = byPart[part] || (byPart[part] = { sum: 0, n: 0 }); o.sum += chunk.reduce((a, b) => a + b, 0); o.n += chunk.length; }
       });
@@ -331,7 +344,7 @@
   function masteryTile() {
     const stats = getPartStats();
     const rows = ["listening", "reading"].map(id => {
-      const parts = skillById(id).data.overview.parts;
+      const parts = skillById(id).overview.parts;
       const cells = parts.map((pt, i) => {
         const s = stats[id + "|" + (i + 1)];
         const pct = s && s.total ? Math.round(100 * s.right / s.total) : null;
@@ -502,7 +515,7 @@
         <div class="card tile span-2">
           <h2>Weak spots</h2>
           ${weak.length ? `<ul class="tips-list">${weak.map(w => {
-              const parts = skillById(w.skill).data.overview.parts;
+              const parts = skillById(w.skill).overview.parts;
               return `<li><strong>${SKILL_NAMES[w.skill]}, ${escapeHtml((parts[w.part - 1] || { name: "Part " + w.part }).name)}</strong>: ${Number(w.pct)}% right over ${Number(w.total)} questions. <button class="btn btn-sm" data-skill="${escapeHtml(String(w.skill))}" data-part="${w.part}">Drill this part</button></li>`;
             }).join("")}</ul>` : `<p class="muted">Answer at least four questions in a part and your lowest-scoring parts will appear here.</p>`}
         </div>
@@ -530,8 +543,10 @@
     app.querySelectorAll("button[data-skill]").forEach(b => {
       b.onclick = () => {
         const skill = skillById(b.dataset.skill), part = parseInt(b.dataset.part);
-        const pool = skill.data.passages.filter(p => p.partNum === part);
-        runMcqPractice(skill, sample(pool, Math.min(3, pool.length)));
+        withData(needsForSkill(skill.id), () => {   // the passages download now, the first time (T-032)
+          const pool = skill.data.passages.filter(p => p.partNum === part);
+          runMcqPractice(skill, sample(pool, Math.min(3, pool.length)));
+        });
       };
     });
   });
@@ -556,10 +571,12 @@
     app.querySelectorAll("[data-diag]").forEach(b => {
       b.onclick = () => {
         const skill = skillById(b.dataset.diag);
-        diagSkill = skill.id;
-        if (skill.id === "listening" || skill.id === "reading") runMcqPractice(skill, sampleOnePerPart(skill.data.passages, skill.data.overview.parts.length));
-        else if (skill.id === "writing") runWritingTask(skill, sample(skill.data.prompts.filter(p => p.taskType === "email"), 1)[0], false);
-        else runSpeakingTask(skill, sample(skill.data.prompts.filter(p => p.taskNum === 1), 1)[0], false);
+        withData(needsForSkill(skill.id), () => {   // the passages or prompts download now, the first time (T-032)
+          diagSkill = skill.id;
+          if (skill.id === "listening" || skill.id === "reading") runMcqPractice(skill, sampleOnePerPart(skill.data.passages, skill.overview.parts.length));
+          else if (skill.id === "writing") runWritingTask(skill, sample(skill.data.prompts.filter(p => p.taskType === "email"), 1)[0], false);
+          else runSpeakingTask(skill, sample(skill.data.prompts.filter(p => p.taskNum === 1), 1)[0], false);
+        });
       };
     });
   });
@@ -570,7 +587,7 @@
     if (rest[0] && skillById(rest[0])) {
       const skill = skillById(rest[0]);
       setPageTitle("Learn " + skill.name);
-      const ov = skill.data.overview;
+      const ov = skill.overview;
       const lessons = L.lessons.filter(l => l.skill === skill.id);
       mount(`
         <a href="#/learn" class="back-link">&larr; All skills</a>
@@ -604,12 +621,12 @@
       <h1>Learn</h1>
       <p class="muted">Understand each part before you drill it, then use the study tips to make the practice stick.</p>
       <section class="grid-4">
-        ${SKILLS.map(s => `<a class="card cta" href="#/learn/${s.id}"><h3>${s.icon}${s.name}</h3><p class="muted small">${s.data.overview.parts.length} parts, ${s.data.overview.tips.length} tips</p></a>`).join("")}
+        ${SKILLS.map(s => `<a class="card cta" href="#/learn/${s.id}"><h3>${s.icon}${s.name}</h3><p class="muted small">${s.overview.parts.length} parts, ${s.overview.tips.length} tips</p></a>`).join("")}
       </section>
       <h2 class="mt">Study tips</h2>
       <div class="grid-2">${Object.keys(areas).map(a => `<div class="card"><h3>${areas[a]}</h3><ul class="tips-list">${L.studyTips.filter(t => t.area === a).map(t => `<li>${escapeHtml(t.tip)}</li>`).join("")}</ul></div>`).join("")}</div>
     `);
-  });
+  }, { needs: ["lessons"], label: "Loading lessons" });  // T-032: data this screen needs
 
   // ================= REVIEW (spaced review of mistakes) =================
   route("review", () => {
@@ -661,7 +678,7 @@
       };
     }
     showOne();
-  });
+  }, { needs: () => reviewNeeds(), label: "Loading your mistakes" });  // T-032: data this screen needs
 
   // ================= WORDS (vocabulary cards) =================
   route("vocab", () => {
@@ -710,7 +727,7 @@
       }
       card();
     };
-  });
+  }, { needs: ["vocab"], label: "Loading word cards" });  // T-032: data this screen needs
 
   // ================= GRAMMAR =================
   route("grammar", (rest) => {
@@ -743,7 +760,7 @@
       const b = Storage.get("grammar", {}); if (b[t.id] === undefined || right > b[t.id]) { b[t.id] = right; Storage.set("grammar", b); }
       this.disabled = true;
     };
-  });
+  }, { needs: ["grammar"], label: "Loading grammar" });  // T-032: data this screen needs
 
   // ================= NOTES (study log and learning journal) =================
   route("notes", () => {
