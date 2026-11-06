@@ -1,6 +1,7 @@
 /*
  * LEARNING NOTE (for beginners): CSS controls how the page looks.
  * T-033 turn A (2026-11-05): white and black themes, card tokens and the spacing scale (section 2), the icon rail, the island menu, the sticky top bar plus title and the collapsing floating island (section 4).
+ * T-034 (2026-11-05): the logo mark animation (Lift + Draw), right after the .logo rules in section 4.
  * T-031 turn A (2026-11-05): section 9 at the end holds the install box, offline pill and phone mastery grid; bars use env(safe-area-inset-*) to clear the iPhone notch and home bar.
  * Each rule looks like:  selector { property: value; }  (the selector says WHAT to style).
  * The :root block below defines named values ("variables" or "tokens") such as --accent. Elsewhere they are used as
@@ -176,6 +177,58 @@ html.glide .topbar { transition: padding var(--dur-4) var(--ease-io); }
 .logo { display: flex; align-items: center; gap: var(--s3); min-height: 48px; padding: 0 var(--s1); border-radius: 14px; color: var(--text); text-decoration: none; font: var(--heading-weight) 1.0625rem/1.1 var(--serif); letter-spacing: -.01em; }
 .logo-only { width: 48px; height: 48px; display: grid; place-items: center; flex: none; border-radius: 14px; text-decoration: none; }
 .logo:focus-visible, .logo-only:focus-visible { outline-offset: 2px; }
+
+/* ---------- Logo mark: Lift + Draw (T-034, Board-approved demo Company/Work/2026-11-05 T-034 logo-hover/demo/logo-hover.html, option 4) ----------
+   js/shell.js (animateLogo) swaps the sidebar, rail and phone-pill marks for inline shapes inside a wrapper (.mk-in) and adds .lg-anim to their link.
+   Hover, keyboard focus or a touch tap (.tap, added by script) plays two things together: the LIFT (the mark tilts -4deg, rises 2px, a shadow fades in, a light band
+   crosses the tile) and the DRAW (the C redraws itself, a thin ring traces the bubble, the Draw starting 60ms after the lift). About 480ms in all.
+   Only transform, opacity and stroke-dashoffset change, so nothing around the logo moves. NOT animated: the focus-mode task bar mark (still a plain <use> copy, its
+   focus ring shows), the scroll anchor (it shows the logo only for an instant while turning into the hamburger), and the sidebar or rail while the page is collapsed
+   (html[data-collapsed="1"], the T-033 flag), so hover never fights the logo-to-hamburger morph. The hover rules sit inside @media (hover:hover) so a finger never leaves them stuck on. */
+:root { --lift-shadow: 0 9px 16px -5px rgba(15, 36, 48, .34), 0 2px 5px rgba(15, 36, 48, .18); }
+html[data-theme="dark"] { --lift-shadow: 0 9px 18px -4px rgba(0, 0, 0, .95), 0 0 0 1px rgba(255, 255, 255, .07); }
+.mk-in { position: relative; display: block; flex: none; line-height: 0; border-radius: 30.5%; isolation: isolate; }   /* 30.5% of the 36 unit tile = the 11 unit corner */
+.mk-in::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: var(--lift-shadow); opacity: 0; z-index: -1; pointer-events: none; }
+.mk-in .p-sheen { opacity: 0; }
+.mk-in .s-ring { fill: none; stroke: var(--accent-ink); stroke-width: 1.2; stroke-linejoin: round; opacity: 0; }
+@keyframes lg-sheen { from { transform: translateX(-26px); opacity: 1; } to { transform: translateX(46px); opacity: 1; } }
+@keyframes lg-draw-c {   /* opacity 0 at the very start: a round line cap on a zero length dash would otherwise show as a stray dot */
+  0% { stroke-dasharray: 100 100; stroke-dashoffset: 100; opacity: 0; }
+  3% { stroke-dasharray: 100 100; stroke-dashoffset: 96; opacity: 1; }
+  100% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: 1; }
+}
+@keyframes lg-draw-ring {   /* same fix for the ring (it showed as a tick on the bubble's left edge during its start delay) */
+  0% { stroke-dasharray: 100 100; stroke-dashoffset: 100; opacity: 0; }
+  3% { stroke-dasharray: 100 100; stroke-dashoffset: 97; opacity: .95; }
+  70% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: .95; }
+  100% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes lg-rm-ring { 0% { opacity: 0; } 35% { opacity: .95; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .lg-anim .mk-in { transition: transform 220ms var(--ease-out); }
+  .lg-anim .mk-in::after { transition: opacity 220ms var(--ease-out); }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .mk-in, .lg-pill:focus-visible .mk-in, .lg-anim.tap .mk-in { transform: translateY(-2px) rotate(-4deg) scale(1.03); }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .mk-in::after, .lg-pill:focus-visible .mk-in::after, .lg-anim.tap .mk-in::after { opacity: 1; }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .p-sheen, .lg-pill:focus-visible .p-sheen, .lg-anim.tap .p-sheen { animation: lg-sheen 420ms var(--ease-io) 40ms both; }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .p-c, .lg-pill:focus-visible .p-c, .lg-anim.tap .p-c { animation: lg-draw-c 380ms var(--ease-out) 60ms both; }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .s-ring, .lg-pill:focus-visible .s-ring, .lg-anim.tap .s-ring { animation: lg-draw-ring 340ms var(--ease-io) 140ms both; }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  html:not([data-collapsed="1"]) .lg-wide:hover .mk-in, .lg-pill:hover .mk-in { transform: translateY(-2px) rotate(-4deg) scale(1.03); }
+  html:not([data-collapsed="1"]) .lg-wide:hover .mk-in::after, .lg-pill:hover .mk-in::after { opacity: 1; }
+  html:not([data-collapsed="1"]) .lg-wide:hover .p-sheen, .lg-pill:hover .p-sheen { animation: lg-sheen 420ms var(--ease-io) 40ms both; }
+  html:not([data-collapsed="1"]) .lg-wide:hover .p-c, .lg-pill:hover .p-c { animation: lg-draw-c 380ms var(--ease-out) 60ms both; }
+  html:not([data-collapsed="1"]) .lg-wide:hover .s-ring, .lg-pill:hover .s-ring { animation: lg-draw-ring 340ms var(--ease-io) 140ms both; }
+}
+@media (prefers-reduced-motion: reduce) {   /* shadow and ring fade only: no tilt, no lift, no sheen, no dash, no movement */
+  .lg-anim .mk-in::after { transition: opacity 120ms linear; }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .mk-in::after, .lg-pill:focus-visible .mk-in::after, .lg-anim.tap .mk-in::after { opacity: 1; }
+  html:not([data-collapsed="1"]) .lg-wide:focus-visible .s-ring, .lg-pill:focus-visible .s-ring, .lg-anim.tap .s-ring { animation: lg-rm-ring 400ms linear both; }
+}
+@media (prefers-reduced-motion: reduce) and (hover: hover) {
+  html:not([data-collapsed="1"]) .lg-wide:hover .mk-in::after, .lg-pill:hover .mk-in::after { opacity: 1; }
+  html:not([data-collapsed="1"]) .lg-wide:hover .s-ring, .lg-pill:hover .s-ring { animation: lg-rm-ring 400ms linear both; }
+}
 
 /* Island (the wide menu). One element, #sidebar. */
 .sidebar { display: flex; flex-direction: column; position: fixed; z-index: 50; left: var(--isl-gap); top: calc(var(--isl-gap) + var(--sat)); bottom: var(--isl-gap); width: var(--isl-w); max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow-float); overflow: hidden;

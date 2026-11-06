@@ -197,6 +197,15 @@ Design: `Company/Work/2026-11-05 T-033 island-nav/design-spec.md`. Turn B1a (bel
 - **Logo.** Every logo is a link to `#/dashboard`. In practice or the exam it opens the same Leave question as Exit (`Shell.focusMode.ask({ to, returnTo })`). The task bar shows the logo mark, Exit (icon only at 360px and narrower) and a two-part title ("Timed Exam" over "Reading").
 - Glossary: **anchor** = the fixed button over the logo spot that becomes a hamburger; **drawer** = the island seen from the left edge on a phone; **overlay** = a menu drawn over the page on a dimmed background; **hysteresis** = two different trigger points so a small wobble cannot flip a state back and forth; **sticky** = stays at an edge while the page scrolls under it.
 
+## Logo mark animation: Lift + Draw (T-034, 2026-11-05, `js/shell.js`, `css/style.css`)
+Demo the Board approved: `Company/Work/2026-11-05 T-034 logo-hover/demo/logo-hover.html` (option 4, commit 4126174).
+- **What plays.** Hover, Tab focus or a touch tap on the sidebar logo, the rail logo and the phone pill Home mark: the mark tilts and rises while a shadow fades in and a light band crosses it (Lift), and the C redraws while a thin ring traces the bubble (Draw, 60ms later). About 480ms; only `transform`, `opacity` and `stroke-dashoffset` change, so nothing around it moves.
+- **Why the mark is rebuilt.** The old mark was `<svg><use href="#i-mark"/></svg>`. CSS cannot reach inside a `<use>` copy, so `animatedMark()` in `shell.js` swaps it for the same shapes drawn inline (same look, pixel for pixel) plus a hidden sheen, ring and the C as its own shape. The wrapper `.mk-in` carries the tilt and the shadow.
+- **Where it does NOT play.** The practice/exam task bar mark (still a plain `<use>`; the focus ring shows), the scroll anchor, and the sidebar or rail while the page is collapsed into the hamburger (`html[data-collapsed="1"]`), so hover never fights the logo-to-hamburger morph. The top bar's "CELPIP Study Hub" is text only (no mark).
+- **Touch.** A tap adds `.tap` for 520ms; the link opens 350ms later (not with reduced motion). One capture listener on the document in `shell.js` holds the click back and clicks again later; it runs before `pagewipe.js` because `shell.js` loads first. Mouse click and Enter are not delayed.
+- **Reduced motion.** Shadow and ring fade only. Hover rules sit in `@media (hover:hover)` so a finger never leaves them stuck.
+- Glossary: **sheen** = the pale band of light; **dash** = drawing a line by growing `stroke-dashoffset`; **capture phase** = a listener that runs before the ones on the link itself.
+
 ## The circle wipe (T-033 B2b, `js/pagewipe.js`)
 
 - **What happens.** Press a page in the menu (side menu, rail, open menu panel, phone drawer) and a teal disc grows from the spot you pressed (240ms), the page changes underneath, and the disc shrinks to the middle (280ms). Colour: `--wipe` in `css/style.css` (light #0B6477, dark #0B3A45); it is decorative and has no text.

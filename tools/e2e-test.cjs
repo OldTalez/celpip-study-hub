@@ -31,6 +31,7 @@ checker run inside this test. Screenshots go to the folder given as the third ar
 Extended 2026-11-05 (Nsikak, T-030 turn 1) with checks for My plan: the prescription functions run in the page with fixed inputs, settings
 save and clamp, automatic study-time counting (pauses when hidden or idle), manual time with an HTML note shown as text, the import
 cleaners for studyTime and the new settings, and the page sections.
+Extended 2026-11-05 (Nsikak, T-034): the logo mark animation (Lift + Draw): hover and Tab at 1440 and 1100, not while collapsed into the hamburger, touch tap at 390 with the 350ms wait, no animation on the task bar mark, reduced motion, resting mark unchanged, no layout shift.
 Extended 2026-11-05 (Nsikak, T-032): lazy data. meta.js equals the real data, Home loads no big file, each route loads exactly what it needs, leaving mid-load draws nothing old,
 a forced load failure shows Retry, script names only come from the fixed table, and offline after the first visit every route still opens.
 */
@@ -40,7 +41,7 @@ const BASE=process.argv[2]||'http://localhost:8790/';const SHOTS=process.argv[3]
 // Every other screenshot is a throw-away check picture and goes to tools/work/shots/ (ignored by git, see "Celpip Test v2/.gitignore"), or to $E2E_SHOTS_DIR.
 const SCRATCH=(process.env.E2E_SHOTS_DIR||require('path').join(__dirname,'work','shots'))+'/';
 if(SHOTS)require('fs').mkdirSync(SCRATCH,{recursive:true});
-const sp=n=>(/^(b1b|b2a|b2b)-/.test(n)?SHOTS:SCRATCH)+n;
+const sp=n=>(/^(b1b|b2a|b2b|t034)-/.test(n)?SHOTS:SCRATCH)+n;
 let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
 (async()=>{const b=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined,
    args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
@@ -1028,6 +1029,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  const IPHONE_UA='Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
  const shotTo=async(pg,n,sel)=>{if(!SHOTS)return;if(sel){const el=await pg.$(sel);if(el){await el.screenshot({path:sp(n)});return}}await pg.screenshot({path:sp(n)})};
  // opens a fresh browser context (own storage, no 100x clock) with an optional script run before the app starts
+ const go2=async(pg,h)=>{await pg.evaluate(h=>{if(location.hash===h)render();else location.hash=h},h);await pg.waitForTimeout(250)};
  const fresh=async(opts,init)=>{const c=await b.newContext(opts);if(init)await c.addInitScript(init);const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error')errs.push('console: '+m.text())});await pg.goto(BASE);await pg.waitForTimeout(700);return {c,pg}};
  const hashGo=async(pg,h)=>{await pg.evaluate(h=>{location.hash=h},h);await pg.waitForTimeout(250)};
  const seedHistory=pg=>pg.evaluate(()=>{localStorage.setItem(Profiles.key('celpip_history_v1'),JSON.stringify([{id:'a_1730000000001_aaa111',type:'practice',skill:'reading',pct:70,clb:7,date:new Date().toISOString()}]))});
@@ -1061,7 +1063,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const css=await pg.evaluate(async()=>(await fetch('css/style.css')).text());
    ok(/\.topbar \{[^}]*(safe-area-inset-top|var\(--sat\))/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
    ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).overscrollBehaviorY==='contain'),'overscroll-behavior-y: contain on the page (a drag down does not reload mid-exam)');
-   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v13')),'service worker cache is celpip-v13');
+   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v14')),'service worker cache is celpip-v14');
    await c.close()});
 
  await step('T-031 install button: Chrome event, iPhone steps, already installed',async()=>{
@@ -1789,8 +1791,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  await step('T-032 offline after the first visit still opens every route',async()=>{
    const c=await b.newContext({viewport:{width:1280,height:900}});const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));
    await pg.goto(BASE);
-   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v13')&&(await (await caches.open('celpip-v13')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
-   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v13');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
+   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v14')&&(await (await caches.open('celpip-v14')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
+   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v14');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
    ok(cached.length===18&&cached.every(Boolean),'offline: sw.js saved all 16 data files plus loader.js and meta.js on the first visit ('+cached.filter(Boolean).length+' of '+cached.length+')');
    await pg.reload();await pg.waitForTimeout(800);
    ok(await pg.evaluate(()=>!!navigator.serviceWorker.controller),'offline: the page is controlled by the service worker');
@@ -2192,6 +2194,117 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
      await pg.evaluate(()=>{const a=document.getElementById('pagewipe').getAnimations()[0];a.pause();a.currentTime=85});
      await pg.screenshot({path:sp('b2b-wipe-1440.png')});await c.close();}
    ok(true,'wipe: step took '+(Date.now()-t0)+' ms');
+ });
+
+
+ // ---------- T-034: the logo mark, Lift + Draw (js/shell.js animateLogo, css/style.css "Logo mark: Lift + Draw") ----------
+ await step('T-034 logo animation: hover, Tab, rail, collapsed, touch tap, task bar, reduced motion, resting look, no layout shift',async()=>{
+   const mk=(vp,extra)=>fresh(Object.assign({viewport:vp,reducedMotion:'no-preference'},extra||{}));
+   // what the mark is doing right now: tilt (computed transform), running animations by name, shadow opacity, ring/sheen opacity
+   const probe=(pg,sel)=>pg.evaluate(sel=>{const a=document.querySelector(sel);const m=a.querySelector('.mk-in');if(!m)return {plain:true,anims:[],tf:'none'};
+     const names=[...a.querySelectorAll('.p-c,.s-ring,.p-sheen')].flatMap(e=>e.getAnimations().map(x=>x.animationName));
+     return {plain:false,tf:getComputedStyle(m).transform,names,shadow:getComputedStyle(m,'::after').opacity,ring:getComputedStyle(a.querySelector('.s-ring')).opacity,sheen:getComputedStyle(a.querySelector('.p-sheen')).opacity,cls:a.className}},sel);
+   const box=(pg,sel)=>pg.$eval(sel,e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}});
+   const mid=async(pg,sel)=>{const r=await box(pg,sel);return {x:r.x+r.w/2,y:r.y+r.h/2}};
+   const keyFocus=async(pg,sel)=>{await pg.keyboard.press('Shift');await pg.evaluate(sel=>document.querySelector(sel).focus(),sel)};  // a key press first, so :focus-visible matches
+   const playing=r=>r.names.includes('lg-draw-c')&&r.names.includes('lg-draw-ring')&&r.names.includes('lg-sheen')&&r.tf!=='none'&&r.shadow==='1';
+   const still=r=>r.names.length===0&&r.tf==='none'&&r.shadow==='0'&&r.ring==='0'&&r.sheen==='0';
+   let {c,pg}=await mk({width:1440,height:900});
+   const S='#sidebar .logo';
+   let r=await probe(pg,S);ok(r.cls.includes('lg-anim')&&r.cls.includes('lg-wide')&&still(r),'logo 1440: sidebar mark is the animated kind and is still at rest');
+   // resting look unchanged: the new mark and the old <use> mark give the same pixels (side by side on a white card)
+   await pg.evaluate(()=>{const h=document.createElement('div');h.id='cmp';h.style.cssText='position:fixed;left:0;top:0;width:200px;height:60px;background:#fff;z-index:9999';
+     h.innerHTML='<div id="cmpA" style="position:absolute;left:10px;top:10px"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg></div><div id="cmpB" style="position:absolute;left:110px;top:10px"></div>';
+     document.body.appendChild(h);document.getElementById('cmpB').appendChild(document.querySelector('#sidebar .logo .mk-in').cloneNode(true))});
+   const pa=await pg.screenshot({clip:{x:10,y:10,width:36,height:36}}),pb=await pg.screenshot({clip:{x:110,y:10,width:36,height:36}});
+   ok(Buffer.compare(pa,pb)===0,'logo: the resting animated mark is pixel-identical to the old mark (36px, light)');
+   await pg.evaluate(()=>document.getElementById('cmp').remove());
+   const b0=await box(pg,S),w0=await box(pg,S+' span:not(.mk-in)'),m0=await box(pg,S+' .mark');
+   const m=await mid(pg,S+' .mark');await pg.mouse.move(m.x,m.y);await pg.waitForTimeout(300);
+   r=await probe(pg,S);ok(playing(r),'logo 1440: mouse hover plays Lift (tilt, shadow, sheen) and Draw (C, ring): '+r.names.join(','));
+   const b1=await box(pg,S),w1=await box(pg,S+' span:not(.mk-in)');
+   ok(b0.x===b1.x&&b0.y===b1.y&&b0.w===b1.w&&b0.h===b1.h&&w0.x===w1.x&&w0.y===w1.y&&w0.w===w1.w,'logo: no layout shift (link box and wordmark do not move while it plays)');
+   if(SHOTS){await pg.waitForTimeout(500);}
+   await pg.mouse.move(700,500);await pg.waitForTimeout(500);r=await probe(pg,S);ok(still(r),'logo 1440: leaving the logo returns it to rest');
+   await keyFocus(pg,S);await pg.waitForTimeout(300);r=await probe(pg,S);ok(playing(r),'logo 1440: Tab focus plays it');
+   ok(await pg.$eval(S,e=>getComputedStyle(e).outlineStyle!=='none'&&parseFloat(getComputedStyle(e).outlineWidth)>=2),'logo: the focus ring shows with the animation');
+   // collapsed into the hamburger: the T-033 flag data-collapsed="1"; no animation even with keyboard focus
+   await pg.evaluate(()=>document.activeElement.blur());await pg.mouse.move(700,500);
+   await pg.evaluate(()=>{window.scrollTo(0,0)});await go2(pg,'#/settings');
+   await pg.evaluate(()=>{window.scrollTo(0,1200)});await pg.waitForTimeout(900);
+   const col=await pg.evaluate(()=>document.documentElement.getAttribute('data-collapsed'));
+   ok(col==='1','logo 1440: scrolled down, the page is collapsed (data-collapsed=1)');
+   await keyFocus(pg,S);await pg.waitForTimeout(400);r=await probe(pg,S);ok(r.names.length===0&&r.tf==='none'&&r.shadow==='0','logo 1440: collapsed into the hamburger, focus on the hidden logo animates nothing');
+   ok(await pg.$eval('#anchor',a=>!a.querySelector('.mk-in')&&!a.classList.contains('lg-anim')),'logo: the scroll anchor keeps the plain mark (no hover rules reach it)');
+   await pg.evaluate(()=>document.activeElement.blur());
+   // exam / practice: the task bar mark never animates but shows the focus ring
+   await go2(pg,'#/practice/reading');await pg.evaluate(()=>window.scrollTo(0,0));await pg.click('#quickBtn');await pg.waitForTimeout(500);
+   ok(await pg.evaluate(()=>document.body.getAttribute('data-mode'))==='focus','logo: practice is running (focus mode)');
+   const T='#taskBar [data-logo]';const tm=await mid(pg,T);await pg.mouse.move(tm.x,tm.y);await pg.waitForTimeout(350);
+   let tr=await pg.evaluate(t=>{const a=document.querySelector(t);return {plain:!a.querySelector('.mk-in'),anims:a.getAnimations({subtree:true}).filter(x=>/^lg-/.test(x.animationName||'')).length,tf:getComputedStyle(a.querySelector('.mark')).transform}},T);
+   ok(tr.plain&&tr.anims===0&&tr.tf==='none','logo: practice/exam task bar mark does not animate on hover');
+   await pg.mouse.move(700,600);await keyFocus(pg,T);await pg.waitForTimeout(350);
+   tr=await pg.evaluate(t=>{const a=document.querySelector(t);const o=getComputedStyle(a);return {anims:a.getAnimations({subtree:true}).filter(x=>/^lg-/.test(x.animationName||'')).length,ring:o.outlineStyle!=='none'&&parseFloat(o.outlineWidth)>=2}},T);
+   ok(tr.anims===0&&tr.ring,'logo: practice/exam task bar mark shows the focus ring and still does not animate');
+   await c.close();
+   // 1100: the rail
+   ({c,pg}=await mk({width:1100,height:800}));
+   const R='#rail .logo-only';
+   r=await probe(pg,R);ok(r.cls.includes('lg-wide')&&still(r),'logo 1100: rail mark is the animated kind and still at rest');
+   const rb0=await box(pg,R);const rm=await mid(pg,R);await pg.mouse.move(rm.x,rm.y);await pg.waitForTimeout(300);
+   r=await probe(pg,R);ok(playing(r),'logo 1100: mouse hover on the rail mark plays it');
+   const rb1=await box(pg,R);ok(rb0.x===rb1.x&&rb0.y===rb1.y&&rb0.w===rb1.w&&rb0.h===rb1.h,'logo 1100: no layout shift on the rail');
+   await pg.mouse.move(700,500);await pg.waitForTimeout(500);await keyFocus(pg,R);await pg.waitForTimeout(300);r=await probe(pg,R);ok(playing(r),'logo 1100: Tab focus on the rail mark plays it');
+   if(SHOTS){await pg.evaluate(()=>{document.querySelectorAll('.mk-in').forEach(()=>{})});}
+   await c.close();
+   // 390: touch tap on the phone pill mark plays it once, then Home opens after about 350ms
+   ({c,pg}=await mk({width:390,height:844},{hasTouch:true}));
+   await go2(pg,'#/settings');await pg.evaluate(()=>window.scrollTo(0,1500));await pg.waitForTimeout(900);
+   ok(await pg.evaluate(()=>document.documentElement.getAttribute('data-collapsed'))==='1','logo 390: scrolled down, the pill shows');
+   const P='.mini .logo-only';r=await probe(pg,P);ok(r.cls.includes('lg-pill')&&still(r),'logo 390: the pill Home mark is the animated kind and still at rest');
+   const pm=await mid(pg,P);const t0=Date.now();await pg.touchscreen.tap(pm.x,pm.y);await pg.waitForTimeout(120);
+   r=await probe(pg,P);const hash1=await pg.evaluate(()=>location.hash);
+   ok(r.cls.includes('tap')&&r.names.includes('lg-draw-c')&&r.tf!=='none'&&hash1==='#/settings','logo 390: a tap plays the animation and the page has not left yet ('+hash1+', '+r.names.join(',')+')');
+   await pg.waitForTimeout(450);const hash2=await pg.evaluate(()=>location.hash);
+   ok(hash2==='#/dashboard','logo 390: after the delay the tap opens Home ('+hash2+', '+(Date.now()-t0)+' ms in)');
+   await pg.waitForTimeout(500);r=await probe(pg,P);ok(!r.cls.includes('tap'),'logo 390: the tap class clears after about 520ms');
+   await c.close();
+   // 390 touch with reduced motion: no wait, no movement
+   ({c,pg}=await mk({width:390,height:844},{hasTouch:true,reducedMotion:'reduce'}));
+   await go2(pg,'#/settings');await pg.evaluate(()=>window.scrollTo(0,1500));await pg.waitForTimeout(900);
+   const pm2=await mid(pg,P);await pg.touchscreen.tap(pm2.x,pm2.y);await pg.waitForTimeout(140);
+   ok(await pg.evaluate(()=>location.hash)==='#/dashboard','logo 390 reduced motion: the tap opens Home with no wait');
+   await c.close();
+   // 1100 touch: the rail mark is held back before the circle wipe starts
+   ({c,pg}=await mk({width:1100,height:800},{hasTouch:true}));
+   await go2(pg,'#/settings');await pg.waitForTimeout(500);const tm2=await mid(pg,R);await pg.touchscreen.tap(tm2.x,tm2.y);await pg.waitForTimeout(150);
+   r=await probe(pg,R);ok(r.cls.includes('tap')&&r.names.includes('lg-draw-c')&&await pg.evaluate(()=>location.hash)==='#/settings'&&await pg.evaluate(()=>document.getElementById('pagewipe').getAnimations().length)===0,'logo 1100: a touch tap on the rail mark plays it first; the wipe and the page change wait');
+   await pg.waitForFunction(()=>location.hash==='#/dashboard',null,{timeout:2500});ok(true,'logo 1100: then Home opens');
+   await c.close();
+   // mouse click and Enter are immediate (1440)
+   ({c,pg}=await mk({width:1440,height:900}));
+   // (the app itself takes about 300 ms to change page after a menu link click: the circle wipe. So "at once" is checked as: no tap class, no 350 ms hold, Home within 600 ms)
+   await go2(pg,'#/settings');await pg.waitForTimeout(500);const cm=await mid(pg,S+' .mark');const tc=Date.now();await pg.mouse.click(cm.x,cm.y);
+   ok(!(await probe(pg,S)).cls.includes('tap'),'logo 1440: a mouse click does not play the touch tap');
+   await pg.waitForFunction(()=>location.hash==='#/dashboard',null,{timeout:2000});const dm=Date.now()-tc;
+   ok(dm<600,'logo 1440: a mouse click opens Home with no tap delay ('+dm+' ms including the page wipe)');
+   await go2(pg,'#/settings');await pg.waitForTimeout(500);await keyFocus(pg,S);const te=Date.now();await pg.keyboard.press('Enter');
+   await pg.waitForFunction(()=>location.hash==='#/dashboard',null,{timeout:2000});const de=Date.now()-te;
+   ok(de<600,'logo 1440: Enter opens Home with no tap delay ('+de+' ms including the page wipe)');
+   await c.close();
+   // reduced motion at 1440: shadow and ring fade only
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'reduce'}));
+   const rm2=await mid(pg,S+' .mark');await pg.mouse.move(rm2.x,rm2.y);await pg.waitForTimeout(160);
+   r=await probe(pg,S);ok(r.tf==='none'&&!r.names.includes('lg-draw-c')&&!r.names.includes('lg-sheen')&&r.names.includes('lg-rm-ring')&&r.shadow==='1','logo 1440 reduced motion: no tilt, no dash, no sheen; the ring fade and the shadow only ('+r.names.join(',')+')');
+   await keyFocus(pg,S);await pg.mouse.move(700,500);await pg.waitForTimeout(300);r=await probe(pg,S);ok(r.tf==='none'&&r.shadow==='1','logo 1440 reduced motion: Tab focus shows the shadow, no movement');
+   await c.close();
+   // pause on frames (screenshots for the Board), only when a folder was given
+   if(SHOTS)for(const [vp,sel,tag] of [[{width:1440,height:900},S,'sidebar-1440'],[{width:1100,height:800},R,'rail-1100']])for(const th of ['light','dark']){
+     ({c,pg}=await mk(vp));await pg.evaluate(t=>Shell.setTheme(t),th);await pg.waitForTimeout(300);
+     const q=await mid(pg,sel+' .mark');await pg.mouse.move(q.x,q.y);await pg.waitForTimeout(30);
+     for(const t of [0,100,200,300,460]){await pg.evaluate(t=>{document.getAnimations().forEach(a=>{const e=a.effect&&a.effect.target;if(e&&e.closest&&e.closest('.lg-anim')){a.pause();a.currentTime=t}else a.finish()})},t);
+       await pg.screenshot({path:sp('t034-'+tag+'-'+th+'-'+String(t).padStart(3,'0')+'.png'),clip:{x:Math.max(0,q.x-48),y:Math.max(0,q.y-34),width:150,height:68}})}
+     await c.close()}
  });
 
  console.log(`\n${fails} failure(s)`);await b.close();process.exit(fails?1:0)})();

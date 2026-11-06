@@ -480,6 +480,62 @@ const Shell = (function () {
     const use = document.createElementNS("http://www.w3.org/2000/svg", "use"); use.setAttribute("href", href);
     svg.appendChild(use); return svg;
   }
+  // ---------- The animated logo mark (T-034, Board-approved demo "Lift + Draw") ----------
+  // The plain mark is <svg><use href="#i-mark"/></svg>. A <use> copy is a sealed box: CSS cannot reach its inside parts, so it cannot animate
+  // the C or the ring separately. This builds the SAME picture as real inline shapes (resting look identical) plus three extras that are
+  // invisible at rest: a light band (sheen), a thin ring and the C as its own shape. css/style.css (section "Logo mark: Lift + Draw") animates them.
+  // The markup is a fixed string (nothing typed by a person goes into it). Each copy gets its own clip id because ids must be unique on a page.
+  let markCount = 0;
+  function animatedMark() {
+    const id = "tile-clip-" + (++markCount);
+    const bubble = "M8 11a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-8l-6 5v-5a3 3 0 0 1-3-3z";
+    const wrap = document.createElement("span");
+    wrap.className = "mk-in";   // the wrapper carries the tilt and the shadow; the <svg class="mark"> inside keeps its size rules
+    wrap.innerHTML = '<svg class="mark" viewBox="0 0 36 36" aria-hidden="true" focusable="false">' +
+      '<clipPath id="' + id + '"><rect width="36" height="36" rx="11"/></clipPath>' +
+      '<rect width="36" height="36" rx="11" fill="var(--accent-fill)"/>' +
+      '<g clip-path="url(#' + id + ')"><g class="p-sheen"><polygon fill="#fff" fill-opacity=".16" points="6,-1 15,-1 7,37 -2,37"/><polygon fill="#fff" fill-opacity=".30" points="17,-1 20,-1 12,37 9,37"/></g></g>' +
+      '<path d="' + bubble + '" fill="var(--accent-ink)"/>' +
+      '<path class="s-ring" pathLength="100" d="' + bubble + '"/>' +
+      '<path class="p-c" pathLength="100" d="M22.4 13a4.5 4.5 0 1 0 0 5" fill="none" stroke="var(--accent-fill)" stroke-width="2.4" stroke-linecap="round"/></svg>';
+    return wrap;
+  }
+  // Swaps the plain mark inside one logo link for the animated one and marks the link (kind "wide" = sidebar and rail, "pill" = phone pill).
+  function animateLogo(link, kind) {
+    if (!link || link.classList.contains("lg-anim")) return;
+    const old = link.querySelector("svg.mark");
+    if (old) old.replaceWith(animatedMark());
+    link.classList.add("lg-anim", "lg-" + kind);
+  }
+  // Touch: a finger has no hover, so a tap plays the animation once (class .tap for 520ms) and the link opens 350ms later so it can be seen.
+  // Reduced motion: no wait. Mouse click and keyboard Enter open at once (no touch pointerdown came first).
+  const TAP_MS = 520, TAP_NAV_MS = 350;
+  // One listener for all animated logos, in the CAPTURE phase on the document. js/pagewipe.js also listens in the capture phase (it takes over the
+  // sidebar and rail links to play the circle wipe) but loads after this file, so this one runs first and can hold the click back before the wipe starts.
+  let tapped = null, tapClear = 0, releasing = false;
+  function wireTaps() {
+    document.addEventListener("pointerdown", e => {
+      const link = e.pointerType === "touch" && e.target.closest && e.target.closest("a.lg-anim");
+      if (!link) return;
+      tapped = link; clearTimeout(tapClear); tapClear = setTimeout(() => { tapped = null; }, 1500);   // a touch that turns into a scroll never clicks: forget it
+      link.classList.remove("tap"); void link.offsetWidth; link.classList.add("tap");                 // reading offsetWidth restarts the animation on a quick second tap
+      setTimeout(() => link.classList.remove("tap"), TAP_MS);
+    }, true);
+    document.addEventListener("pointercancel", () => { tapped = null; }, true);
+    document.addEventListener("click", e => {
+      const link = e.target.closest && e.target.closest("a.lg-anim");
+      if (releasing || !link || link !== tapped) return;
+      tapped = null;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;   // reduced motion: open at once
+      e.preventDefault(); e.stopImmediatePropagation();                            // hold the jump; every other click handler sees the second click below
+      setTimeout(() => { releasing = true; link.click(); releasing = false; }, TAP_NAV_MS);
+    }, true);
+  }
+  wireTaps();
+  function animateLogos() {
+    animateLogo(document.querySelector("#sidebar .logo"), "wide");
+    animateLogo(document.querySelector(".mini .logo-only"), "pill");
+  }
   function buildRail() {
     const rail = byId("rail");
     if (!rail || rail.firstChild) return;
@@ -488,6 +544,7 @@ const Shell = (function () {
     const logo = document.createElement("a");
     logo.className = "logo-only"; logo.href = "#/dashboard"; logo.setAttribute("data-logo", ""); logo.setAttribute("aria-label", "CELPIP Study Hub, go to Home");
     logo.appendChild(svgUse("mark", "#i-mark"));
+    animateLogo(logo, "wide");
     const expand = document.createElement("button");
     expand.type = "button"; expand.className = "ri"; expand.setAttribute("data-rail-expand", "");
     expand.setAttribute("data-tip", "Expand menu"); expand.setAttribute("aria-label", "Expand menu");
@@ -506,6 +563,7 @@ const Shell = (function () {
     const sp = document.createElement("div"); sp.className = "sp";
     const prof = document.createElement("div"); prof.className = "profile-wrap"; prof.setAttribute("data-profile-switch", "");
     rail.append(logo, expand, sep, list, sp, prof);
+    animateLogos();   // also swaps the sidebar's and the phone pill's marks (they are already in the page)
     // WCAG 1.4.13: Esc hides the tooltip without moving focus; it comes back when focus or the pointer moves to another button.
     ["focusin", "mouseover"].forEach(ev => rail.addEventListener(ev, () => document.body.removeAttribute("data-tips")));
   }

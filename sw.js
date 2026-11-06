@@ -13,7 +13,7 @@
    v10 (T-032, 2026-11-05): added js/loader.js and js/data/meta.js. The big practice data files are no longer in index.html (js/loader.js adds them when a screen needs them), but they stay in FILES below, so they are all saved on the first visit and every route still works offline.
    v13 (T-033 B2b, 2026-11-05): added js/pagewipe.js (the circle wipe page change).
    When a new version takes over, the page hears "controllerchange" and offers a Refresh button; it never reloads by itself. */
-const CACHE = "celpip-v13";
+const CACHE = "celpip-v14";
 const FILES = [
   "./", "index.html", "css/style.css", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon-180.png", "favicon.svg",
   "js/shell.js", "js/pagewipe.js", "js/loader.js", "js/data/meta.js", "js/storage.js", "js/prescription.js", "js/calendar.js", "js/appfeel.js", "js/shortcuts.js", "js/profiles.js", "js/profile-ui.js", "js/transfer.js", "js/vendor/qrcode.js", "js/vendor/jsQR.js", "js/vendor/jsQR-LICENSE.txt", "js/drafts.js", "js/scoring.js", "js/tools.js", "js/app.js", "js/study.js",
