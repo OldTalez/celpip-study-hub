@@ -580,7 +580,7 @@ const Shell = (function () {
   // from any touch, scroll or key press, and from the end of the last play. It never plays in practice or the exam (focus mode), while the bar is collapsed,
   // while the drawer or a dialog is open, or while the tab is hidden: a play that is due then is skipped, not queued, and the next change or touch starts the count again.
   // Reduced motion: one plain cross-fade on page open, no repeats. Desktop (a mouse) is untouched: the check below needs a screen with no hover.
-  const IDLE = { REPEAT_MS: 25000, OPEN_MS: 350, SEQ_MS: 1450, SEQ_RM_MS: 1350 };   // REPEAT_MS: the Board's 25 s. OPEN_MS: let the new page settle first. SEQ: 1.4 s of motion plus a margin
+  const IDLE = { REPEAT_MS: 5000, OPEN_MS: 350, SEQ_MS: 1450, SEQ_RM_MS: 1350 };   // REPEAT_MS: the Board's 5 s (2026-11-06, T-038; was 25 s). OPEN_MS: let the new page settle first. SEQ: 1.4 s of motion plus a margin
   const idleQuery = window.matchMedia("(max-width: 999.98px) and (hover: none)");   // the phone layout on a screen with no hover (phones, and tablets in the phone layout)
   const idleState = { playing: false, timer: 0, endTimer: 0, openTimer: 0, lastInput: 0, lastPlayEnd: 0, key: "" };
   const idleBrand = () => document.querySelector(".topbar .brand-top");

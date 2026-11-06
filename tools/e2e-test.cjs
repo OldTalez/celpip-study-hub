@@ -32,7 +32,7 @@ Extended 2026-11-05 (Nsikak, T-030 turn 1) with checks for My plan: the prescrip
 save and clamp, automatic study-time counting (pauses when hidden or idle), manual time with an HTML note shown as text, the import
 cleaners for studyTime and the new settings, and the page sections.
 Extended 2026-11-05 (Nsikak, T-034): the logo mark animation (Lift + Draw): hover and Tab at 1440 and 1100, not while collapsed into the hamburger, touch tap at 390 with the 350ms wait, no animation on the task bar mark, reduced motion, resting mark unchanged, no layout shift.
-Extended 2026-11-06 (Nsikak, T-035): the idle logo in the phone top bar: plays on page open, repeats while idle (the 25 s constant, and the logic with a shortened wait through Shell.idleLogo.setTiming), a touch/key resets the count, never in practice or the exam, paused while the bar is collapsed, the drawer is open or the tab is hidden, reduced motion = one cross-fade, no layout shift, the brand tap goes Home, desktop unchanged.
+Extended 2026-11-06 (Nsikak, T-035): the idle logo in the phone top bar: plays on page open, repeats while idle (the 25 s constant, 5 s since T-038, and the logic with a shortened wait through Shell.idleLogo.setTiming), a touch/key resets the count, never in practice or the exam, paused while the bar is collapsed, the drawer is open or the tab is hidden, reduced motion = one cross-fade, no layout shift, the brand tap goes Home, desktop unchanged.
 Extended 2026-11-05 (Nsikak, T-032): lazy data. meta.js equals the real data, Home loads no big file, each route loads exactly what it needs, leaving mid-load draws nothing old,
 a forced load failure shows Retry, script names only come from the fixed table, and offline after the first visit every route still opens.
 */
@@ -1064,7 +1064,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const css=await pg.evaluate(async()=>(await fetch('css/style.css')).text());
    ok(/\.topbar \{[^}]*(safe-area-inset-top|var\(--sat\))/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
    ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).overscrollBehaviorY==='contain'),'overscroll-behavior-y: contain on the page (a drag down does not reload mid-exam)');
-   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v15')),'service worker cache is celpip-v15');
+   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v16')),'service worker cache is celpip-v16');
    await c.close()});
 
  await step('T-031 install button: Chrome event, iPhone steps, already installed',async()=>{
@@ -1792,8 +1792,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  await step('T-032 offline after the first visit still opens every route',async()=>{
    const c=await b.newContext({viewport:{width:1280,height:900}});const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));
    await pg.goto(BASE);
-   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v15')&&(await (await caches.open('celpip-v15')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
-   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v15');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
+   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v16')&&(await (await caches.open('celpip-v16')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
+   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v16');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
    ok(cached.length===18&&cached.every(Boolean),'offline: sw.js saved all 16 data files plus loader.js and meta.js on the first visit ('+cached.filter(Boolean).length+' of '+cached.length+')');
    await pg.reload();await pg.waitForTimeout(800);
    ok(await pg.evaluate(()=>!!navigator.serviceWorker.controller),'offline: the page is controlled by the service worker');
@@ -2323,7 +2323,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    // 1. constant and first load at 390
    let {c,pg}=await mk({width:390,height:844});
    let t=await pg.evaluate(()=>Shell.idleLogo.timing());
-   ok(t.REPEAT_MS===25000&&t.OPEN_MS===350,'idle logo: the repeat is the Board\'s 25 s (REPEAT_MS '+t.REPEAT_MS+') and the page-open delay is 350 ms');
+   ok(t.REPEAT_MS===5000&&t.OPEN_MS===350,'idle logo: the repeat is the Board\'s 5 s (REPEAT_MS '+t.REPEAT_MS+') and the page-open delay is 350 ms');
    let l=await logs(pg);ok(l.p.length===1,'idle logo 390 touch: plays once on the first page open ('+l.p.length+' play)');
    // a11y: the accessible name stays; overlay is hidden from screen readers; the real text is untouched
    const a11y=await pg.evaluate(()=>{const b=document.querySelector('.topbar .brand-top');const ov=b.querySelector('.bt-ov'),mkx=b.querySelector('.bt-mk');return {label:b.getAttribute('aria-label'),ov:ov&&ov.getAttribute('aria-hidden'),mk:mkx&&mkx.getAttribute('aria-hidden'),letters:ov?ov.children.length:0,text:[...b.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('')}});
