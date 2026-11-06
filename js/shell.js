@@ -18,6 +18,7 @@
  * Attributes on <html> tell the CSS what to show: data-nav="pinned|rail", data-overlay="open", data-collapsed="1" (scrolled down),
  * data-scrolled="1" (more than 24px down) and data-title="1" (close enough to the top that the page title shows).
  * Defaults the Board has not confirmed are collected in SETTINGS below so each can be changed in one place.
+ * T-035: on a phone (no hover) the top bar's brand folds into the logo mark now and then (section "The idle logo"; Shell.idleLogo is for the tests).
  * Nothing here talks to the network. The only things stored are the theme choice ("celpip_theme") and the pinned/folded choice ("celpip_sidebar").
  */
 const Shell = (function () {
@@ -380,6 +381,7 @@ const Shell = (function () {
     fillThemeSwitches();
     syncTitleFlag(window.scrollY);
     watchStack();
+    idlePageOpen();   // T-035: the phone top bar plays its idle logo once for every page that opens
   }
 
   // ---------- The menu: icon rail, island, overlay, phone drawer (spec sections 7, 8 and 10) ----------
@@ -567,6 +569,105 @@ const Shell = (function () {
     // WCAG 1.4.13: Esc hides the tooltip without moving focus; it comes back when focus or the pointer moves to another button.
     ["focusin", "mouseover"].forEach(ev => rail.addEventListener(ev, () => document.body.removeAttribute("data-tips")));
   }
+  // ---------- The idle logo in the phone top bar (T-035, Board-approved demo Company/Work/2026-11-06 T-035 logo-idle/demo/logo-idle.html) ----------
+  // A phone has no hover, so its logo never moves. Here the words "CELPIP Study Hub" in the top bar fold, letter by letter, into the logo mark;
+  // the mark plays the same Lift + Draw as T-034 (same keyframes lg-sheen, lg-draw-c, lg-draw-ring); then the words unfold back. 1.4 seconds in all.
+  // HOW: at rest the link holds plain text and nothing else changes. On the first play, script adds an overlay on top of the text: one <span> per letter
+  // (aria-hidden) and the animated mark. While the class .bt-playing is on the link, the real text turns transparent (so nothing is drawn twice) and the CSS
+  // keyframes in css/style.css ("Top-bar idle logo") move the overlay by transform and opacity only. The link keeps its width and the bar its height, because the
+  // overlay is absolutely placed and the text never leaves the flow. The link keeps its aria-label, so a screen reader still says "CELPIP Study Hub, go to Home" once.
+  // WHEN (the Board picked "C", 2026-11-06): once each time a page opens (every route change), then every REPEAT_MS while the learner is idle. The count restarts
+  // from any touch, scroll or key press, and from the end of the last play. It never plays in practice or the exam (focus mode), while the bar is collapsed,
+  // while the drawer or a dialog is open, or while the tab is hidden: a play that is due then is skipped, not queued, and the next change or touch starts the count again.
+  // Reduced motion: one plain cross-fade on page open, no repeats. Desktop (a mouse) is untouched: the check below needs a screen with no hover.
+  const IDLE = { REPEAT_MS: 25000, OPEN_MS: 350, SEQ_MS: 1450, SEQ_RM_MS: 1350 };   // REPEAT_MS: the Board's 25 s. OPEN_MS: let the new page settle first. SEQ: 1.4 s of motion plus a margin
+  const idleQuery = window.matchMedia("(max-width: 999.98px) and (hover: none)");   // the phone layout on a screen with no hover (phones, and tablets in the phone layout)
+  const idleState = { playing: false, timer: 0, endTimer: 0, openTimer: 0, lastInput: 0, lastPlayEnd: 0, key: "" };
+  const idleBrand = () => document.querySelector(".topbar .brand-top");
+  // Why can it not play right now? "" means it can.
+  function idleBlocked() {
+    if (!idleQuery.matches) return "not a touch phone layout";
+    if (document.hidden) return "tab hidden";
+    if (focusState.on) return "practice or exam";
+    if (isCollapsed()) return "bar collapsed";
+    if (overlayOpen()) return "menu open";
+    if (document.querySelector("dialog[open]")) return "dialog open";
+    const b = idleBrand();
+    if (!b || !b.getClientRects().length) return "no bar";
+    return "";
+  }
+  // Builds the overlay once per link: the letters (text from the page itself) and the animated mark.
+  function idleBuild(brand) {
+    if (brand.querySelector(".bt-ov")) return;
+    const ov = document.createElement("span"); ov.className = "bt-ov"; ov.setAttribute("aria-hidden", "true");
+    brand.textContent.trim().split("").forEach(ch => { const s = document.createElement("span"); s.className = "bt-ch"; s.textContent = ch; ov.appendChild(s); });
+    const mk = document.createElement("span"); mk.className = "bt-mk"; mk.setAttribute("aria-hidden", "true"); mk.appendChild(animatedMark());
+    brand.append(ov, mk);
+  }
+  // How far must each letter travel to reach the mark's centre (16px from the link's left edge)? offsetLeft ignores transforms, so this is safe at any moment.
+  // Far letters leave first and return last (--fd, --ud are their small extra delays, 0 to 90ms). Measured at each play, because the web font may have loaded since.
+  function idleMeasure(brand) {
+    const chars = [...brand.querySelectorAll(".bt-ch")];
+    const dists = chars.map(c => Math.abs(16 - (c.offsetLeft + c.offsetWidth / 2)));
+    const max = Math.max.apply(null, dists) || 1;
+    chars.forEach((c, i) => {
+      c.style.setProperty("--dx", (16 - (c.offsetLeft + c.offsetWidth / 2)).toFixed(1) + "px");
+      c.style.setProperty("--fd", Math.round((1 - dists[i] / max) * 90) + "ms");
+      c.style.setProperty("--ud", Math.round((dists[i] / max) * 90) + "ms");
+    });
+  }
+  function idleAbort() {
+    clearTimeout(idleState.endTimer); clearTimeout(idleState.openTimer);
+    const b = idleBrand(); if (b) b.classList.remove("bt-playing");
+    idleState.playing = false;
+  }
+  function idleEnd() {
+    const b = idleBrand(); if (b) b.classList.remove("bt-playing");
+    idleState.playing = false; idleState.lastPlayEnd = Date.now(); idleArm();
+  }
+  function idlePlay() {
+    const why = idleBlocked(); if (why) return why;
+    const b = idleBrand();
+    idleBuild(b);
+    b.classList.remove("bt-playing"); void b.offsetWidth;    // restart cleanly if it was somehow still on
+    b.classList.add("bt-playing"); idleMeasure(b);           // the overlay only has a size once the class shows it
+    idleState.playing = true;
+    clearTimeout(idleState.endTimer); idleState.endTimer = setTimeout(idleEnd, reducedQuery.matches ? IDLE.SEQ_RM_MS : IDLE.SEQ_MS);
+    return "";
+  }
+  // The next play is due REPEAT_MS after the later of the last touch and the end of the last play. Reduced motion never repeats.
+  function idleArm() {
+    clearTimeout(idleState.timer); idleState.timer = 0;
+    if (reducedQuery.matches) return;
+    const delay = Math.max(0, Math.max(idleState.lastInput, idleState.lastPlayEnd) + IDLE.REPEAT_MS - Date.now());
+    idleState.timer = setTimeout(() => { idleState.timer = 0; if (!idleBlocked()) idlePlay(); }, delay);   // blocked: skip; the next change or touch re-arms it
+  }
+  function idleInput() { idleState.lastInput = Date.now(); if (!idleState.playing) idleArm(); }
+  // A page opened (called from afterRender, so on the first load and on every route change): start over and play once shortly after.
+  function idlePageOpen() {
+    idleAbort(); clearTimeout(idleState.timer);
+    idleState.lastInput = Date.now(); idleState.lastPlayEnd = 0;
+    idleState.openTimer = setTimeout(() => { if (idlePlay()) idleArm(); }, IDLE.OPEN_MS);
+  }
+  function idleWire() {
+    ["pointerdown", "touchstart", "wheel", "keydown"].forEach(ev => document.addEventListener(ev, idleInput, { passive: true, capture: true }));
+    window.addEventListener("scroll", idleInput, { passive: true });
+    // Tapping the brand goes Home as always; any play in progress is cancelled at once (no wait, unlike the T-034 mark tap).
+    document.addEventListener("pointerdown", e => { if (e.target.closest && e.target.closest(".topbar .brand-top")) idleAbort(); }, true);
+    // A state change that blocks play cancels a running one; one that unblocks it counts as a touch (the count starts from zero, no play at once).
+    const sync = () => {
+      const key = [isCollapsed(), overlayOpen(), focusState.on, document.hidden, idleQuery.matches].join();
+      if (key === idleState.key) return;
+      idleState.key = key;
+      if (idleBlocked()) { idleAbort(); clearTimeout(idleState.timer); idleState.timer = 0; } else idleInput();
+    };
+    new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ["data-collapsed", "data-overlay"] });
+    new MutationObserver(sync).observe(document.body || root, { attributes: true, attributeFilter: ["data-mode"] });
+    document.addEventListener("visibilitychange", sync);
+    if (idleQuery.addEventListener) idleQuery.addEventListener("change", sync); else if (idleQuery.addListener) idleQuery.addListener(sync);
+    idleState.key = [isCollapsed(), overlayOpen(), focusState.on, document.hidden, idleQuery.matches].join();
+  }
+  idleWire();
   const expand = () => document.querySelector("[data-rail-expand]");
   document.addEventListener("click", e => {
     const op = e.target.closest("[data-menu-open]");
@@ -613,5 +714,5 @@ const Shell = (function () {
   document.addEventListener("DOMContentLoaded", fillThemeSwitches);
   if (document.readyState !== "loading") fillThemeSwitches();
 
-  return { SETTINGS, applyNavLayout, getTheme: getPref, setTheme, focusMode, contents, beforeRender, afterRender, fillThemeSwitches, confirmLeave, nav: { form: navForm, overlayOpen, openOverlay, closeOverlay } };
+  return { SETTINGS, applyNavLayout, getTheme: getPref, setTheme, focusMode, contents, beforeRender, afterRender, fillThemeSwitches, confirmLeave, idleLogo: { timing: () => Object.assign({}, IDLE), setTiming: o => Object.assign(IDLE, o), playing: () => idleState.playing, blocked: idleBlocked }, nav: { form: navForm, overlayOpen, openOverlay, closeOverlay } };
 })();

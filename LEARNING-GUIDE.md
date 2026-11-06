@@ -24,7 +24,7 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 | `css/style.css` | How everything looks; colours, shapes and the motion scale are named variables at the top, with a light and a dark set |
 | `js/tools.js` | The practice tools (turn B): toasts, the question dots with Flag buttons, time per question, the highlight and notes pop-up, the word-count bar and the audio progress bar. Read its LEARNING NOTE first |
 | `js/pagewipe.js` | The circle wipe when a menu page is pressed (T-033 B2b), and the Settings switch's storage key `celpip_pagewipe` |
-| `js/shell.js` | The frame around every screen: menu highlighting, Light / Dark / Auto theme, the More sheet, focus mode with its Exit question, header behaviour on scroll, and the lesson contents list |
+| `js/shell.js` | The frame around every screen: menu highlighting, Light / Dark / Auto theme, the More sheet, focus mode with its Exit question, header behaviour on scroll, the lesson contents list, the animated logo marks and the phone top bar's idle logo |
 | `fonts/` | The two bundled font families as small Latin-only WOFF2 files, with their licence (`OFL.txt`) |
 | `js/loader.js` | Loads the big practice data files only when a screen needs them (T-032). Read its LEARNING NOTE first |
 | `js/data/meta.js` | Generated small summary of the data (part names, passage ids, word ids), always loaded |
@@ -66,6 +66,16 @@ Double-click `index.html`. If your browser blocks something when opened as a fil
 - **View Transitions.** `goToRoute()` in `app.js` wraps a screen change in `document.startViewTransition`, so the browser cross-fades old and new screens. If the browser lacks it, the route is unchanged, or the person asked for reduced motion, the screen simply switches.
 - **Contents list.** On a Learn page, headings marked `data-toc` become a list of links (`Shell.contents`). An IntersectionObserver marks the section in view with `aria-current="location"`. The links scroll with JavaScript because the address after `#` is the router's.
 - **One motion scale.** `--dur-1` to `--dur-4` and three easing curves are the only timings in the CSS; with reduced motion the durations become 0.
+
+## The idle logo in the phone top bar (added 2026-11-06, T-035, `js/shell.js` section "The idle logo", `css/style.css` section "Top-bar idle logo")
+- **What the student sees.** On a phone, and on a tablet that uses the phone layout, the words "CELPIP Study Hub" in the top bar fold, letter by letter, into the logo mark; the mark plays the T-034 Lift + Draw; the words return. 1.4 seconds. The Board picked how often (option "C"): once each time a page opens, then every 25 seconds while the person is idle. A touch, scroll or key press restarts the 25 seconds.
+- **Who it is for.** The check is the media query `(max-width: 999.98px) and (hover: none)`: a screen with no hover. A mouse on a narrow window, and every desktop, see no change.
+- **An overlay, not a rewrite.** The link keeps its plain text. When it first plays, script adds an overlay (one `<span>` per letter plus the animated mark). While the class `bt-playing` is on, the real text turns transparent and the CSS keyframes move the overlay. Because the overlay is placed with `position: absolute`, the link's width and the bar's height never change (a test measures them on every frame).
+- **Measure at play time.** Each letter must travel to the mark; `offsetLeft` (which ignores transforms) gives the distance. It is read at every play because the web font may arrive after the page.
+- **No dip.** The mark fades in while the letters are still solid and the letters return before the mark fades, so there is no moment with almost nothing showing (measured on the demo: the lowest combined opacity is 0.917).
+- **The rules, in one place.** `idleBlocked()` says why it cannot play: not a touch phone layout, tab hidden, practice or exam (focus mode), bar collapsed, menu open, dialog open. A play that is due while blocked is skipped, never queued. The numbers sit in the `IDLE` object (`REPEAT_MS: 25000`); tests shorten them through `Shell.idleLogo.setTiming`.
+- **Reduced motion.** One opacity cross-fade on page open, no repeats.
+- **Tests.** The step "T-035 idle logo" in `tools/e2e-test.cjs`.
 
 ## Practice tools (added 2026-11-05, T-029 turn B, `js/tools.js`)
 - **Question dots and Flag.** One dot per question: filled = answered, plain ring = not yet, accent outline = the question you are on, flag badge = marked for review. The dot's label says all of that in words too. Clicking a dot scrolls to and focuses that question. The dots repaint from the same `watchAnswered` counter that writes "3 of 6 answered", so there is one counter.

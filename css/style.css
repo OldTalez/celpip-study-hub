@@ -230,6 +230,49 @@ html[data-theme="dark"] { --lift-shadow: 0 9px 18px -4px rgba(0, 0, 0, .95), 0 0
   html:not([data-collapsed="1"]) .lg-wide:hover .s-ring, .lg-pill:hover .s-ring { animation: lg-rm-ring 400ms linear both; }
 }
 
+/* ---------- Top-bar idle logo (T-035, Board-approved demo Company/Work/2026-11-06 T-035 logo-idle/demo/logo-idle.html, frequency C) ----------
+   js/shell.js ("The idle logo") adds an overlay inside the phone top bar's brand link: one .bt-ch span per letter and the animated mark (.bt-mk). Both are display:none
+   at rest. Adding .bt-playing to the link makes the real text transparent (the overlay carries the same words in --text) and starts everything at once.
+   Timeline (ms), 1400 in all: letters fold toward the mark 0 to 390 (far letters first, opacity holds until 60% then fades); the mark appears 120 to 300, while the
+   letters are still solid, so the combined ink never dips (Board, 2026-11-06: "the slight dip is a bother"); Lift 420 to 980 and Draw 440 to 860 are the T-034 values
+   shifted by 420ms; the mark leaves 1036 to 1204 once the returning letters are solid; letters unfold 1000 to 1390 (near letters first).
+   Only transform, opacity and stroke-dashoffset change; the overlay is absolutely placed, so the link keeps its width and the bar its height. Reduced motion: the words
+   and the plain mark cross-fade once (opacity only). will-change is set only while playing. */
+.topbar .brand-top { position: relative; }
+.brand-top .bt-ov, .brand-top .bt-mk { display: none; pointer-events: none; }
+.topbar .brand-top.bt-playing { color: transparent; }
+.brand-top.bt-playing .bt-ov { display: flex; align-items: center; position: absolute; left: 0; top: 0; bottom: 0; white-space: nowrap; color: var(--text); }
+.bt-ch { display: inline-block; white-space: pre; transform-origin: 50% 50%; }
+.brand-top.bt-playing .bt-mk { display: block; position: absolute; left: 0; top: 50%; width: 32px; height: 32px; margin-top: -16px; opacity: 0; transform-origin: 50% 50%; }
+.bt-mk .mk-in { width: 100%; height: 100%; }
+.bt-mk .mark { width: 32px; height: 32px; }
+@keyframes bt-fold { 0% { opacity: 1; transform: none; } 60% { opacity: 1; } 100% { opacity: 0; transform: translateX(var(--dx)) scale(.15); } }
+@keyframes bt-unfold { 0% { opacity: 0; transform: translateX(var(--dx)) scale(.15); } 35% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes bt-mark {
+  0%, 8.5% { opacity: 0; transform: scale(.4); animation-timing-function: var(--ease-out); }
+  21.5% { opacity: 1; transform: scale(1); }
+  74% { opacity: 1; transform: scale(1); animation-timing-function: var(--ease-io); }
+  86%, 100% { opacity: 0; transform: scale(.4); }
+}
+@keyframes bt-lift { 0%, 30% { transform: none; animation-timing-function: var(--ease-out); } 45%, 56% { transform: translateY(-2px) rotate(-4deg) scale(1.03); animation-timing-function: var(--ease-io); } 70%, 100% { transform: none; } }
+@keyframes bt-shadow { 0%, 30% { opacity: 0; animation-timing-function: var(--ease-out); } 45%, 56% { opacity: 1; animation-timing-function: var(--ease-io); } 70%, 100% { opacity: 0; } }
+@keyframes bt-rm-txt { 0% { opacity: 1; } 15%, 85% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes bt-rm-mk { 0% { opacity: 0; } 15%, 85% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .topbar .brand-top.bt-playing .bt-ch { opacity: 0; transform: translateX(var(--dx)) scale(.15); will-change: transform, opacity;
+    animation: bt-fold 300ms var(--ease-io) var(--fd) backwards, bt-unfold 300ms var(--ease-out) calc(1000ms + var(--ud)) forwards; }   /* fold fills "backwards" so a late letter shows open until its turn; unfold holds "open" at the end */
+  .brand-top.bt-playing .bt-mk { animation: bt-mark 1400ms linear both; will-change: transform, opacity; }
+  .brand-top.bt-playing .bt-mk .mk-in { animation: bt-lift 1400ms linear both; }
+  .brand-top.bt-playing .bt-mk .mk-in::after { animation: bt-shadow 1400ms linear both; }
+  .brand-top.bt-playing .bt-mk .p-sheen { animation: lg-sheen 420ms var(--ease-io) 440ms both; }
+  .brand-top.bt-playing .bt-mk .p-c { animation: lg-draw-c 380ms var(--ease-out) 440ms both; }
+  .brand-top.bt-playing .bt-mk .s-ring { animation: lg-draw-ring 340ms var(--ease-io) 520ms both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-top.bt-playing .bt-ov { animation: bt-rm-txt 1300ms linear both; }
+  .brand-top.bt-playing .bt-mk { animation: bt-rm-mk 1300ms linear both; }
+}
+
 /* Island (the wide menu). One element, #sidebar. */
 .sidebar { display: flex; flex-direction: column; position: fixed; z-index: 50; left: var(--isl-gap); top: calc(var(--isl-gap) + var(--sat)); bottom: var(--isl-gap); width: var(--isl-w); max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow-float); overflow: hidden;
   transform-origin: 40px 28px; visibility: hidden; opacity: 0; clip-path: inset(0 calc(100% - var(--rail-w)) 0 0 round 24px); /* hidden = squeezed to rail width; opening grows it */

@@ -32,6 +32,7 @@ Extended 2026-11-05 (Nsikak, T-030 turn 1) with checks for My plan: the prescrip
 save and clamp, automatic study-time counting (pauses when hidden or idle), manual time with an HTML note shown as text, the import
 cleaners for studyTime and the new settings, and the page sections.
 Extended 2026-11-05 (Nsikak, T-034): the logo mark animation (Lift + Draw): hover and Tab at 1440 and 1100, not while collapsed into the hamburger, touch tap at 390 with the 350ms wait, no animation on the task bar mark, reduced motion, resting mark unchanged, no layout shift.
+Extended 2026-11-06 (Nsikak, T-035): the idle logo in the phone top bar: plays on page open, repeats while idle (the 25 s constant, and the logic with a shortened wait through Shell.idleLogo.setTiming), a touch/key resets the count, never in practice or the exam, paused while the bar is collapsed, the drawer is open or the tab is hidden, reduced motion = one cross-fade, no layout shift, the brand tap goes Home, desktop unchanged.
 Extended 2026-11-05 (Nsikak, T-032): lazy data. meta.js equals the real data, Home loads no big file, each route loads exactly what it needs, leaving mid-load draws nothing old,
 a forced load failure shows Retry, script names only come from the fixed table, and offline after the first visit every route still opens.
 */
@@ -41,7 +42,7 @@ const BASE=process.argv[2]||'http://localhost:8790/';const SHOTS=process.argv[3]
 // Every other screenshot is a throw-away check picture and goes to tools/work/shots/ (ignored by git, see "Celpip Test v2/.gitignore"), or to $E2E_SHOTS_DIR.
 const SCRATCH=(process.env.E2E_SHOTS_DIR||require('path').join(__dirname,'work','shots'))+'/';
 if(SHOTS)require('fs').mkdirSync(SCRATCH,{recursive:true});
-const sp=n=>(/^(b1b|b2a|b2b|t034)-/.test(n)?SHOTS:SCRATCH)+n;
+const sp=n=>(/^(b1b|b2a|b2b|t034|t035)-/.test(n)?SHOTS:SCRATCH)+n;
 let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
 (async()=>{const b=await chromium.launch({executablePath:process.env.CHROME_PATH||undefined,
    args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
@@ -1063,7 +1064,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const css=await pg.evaluate(async()=>(await fetch('css/style.css')).text());
    ok(/\.topbar \{[^}]*(safe-area-inset-top|var\(--sat\))/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
    ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).overscrollBehaviorY==='contain'),'overscroll-behavior-y: contain on the page (a drag down does not reload mid-exam)');
-   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v14')),'service worker cache is celpip-v14');
+   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v15')),'service worker cache is celpip-v15');
    await c.close()});
 
  await step('T-031 install button: Chrome event, iPhone steps, already installed',async()=>{
@@ -1791,8 +1792,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  await step('T-032 offline after the first visit still opens every route',async()=>{
    const c=await b.newContext({viewport:{width:1280,height:900}});const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));
    await pg.goto(BASE);
-   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v14')&&(await (await caches.open('celpip-v14')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
-   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v14');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
+   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v15')&&(await (await caches.open('celpip-v15')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
+   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v15');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
    ok(cached.length===18&&cached.every(Boolean),'offline: sw.js saved all 16 data files plus loader.js and meta.js on the first visit ('+cached.filter(Boolean).length+' of '+cached.length+')');
    await pg.reload();await pg.waitForTimeout(800);
    ok(await pg.evaluate(()=>!!navigator.serviceWorker.controller),'offline: the page is controlled by the service worker');
@@ -2305,6 +2306,120 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
      for(const t of [0,100,200,300,460]){await pg.evaluate(t=>{document.getAnimations().forEach(a=>{const e=a.effect&&a.effect.target;if(e&&e.closest&&e.closest('.lg-anim')){a.pause();a.currentTime=t}else a.finish()})},t);
        await pg.screenshot({path:sp('t034-'+tag+'-'+th+'-'+String(t).padStart(3,'0')+'.png'),clip:{x:Math.max(0,q.x-48),y:Math.max(0,q.y-34),width:150,height:68}})}
      await c.close()}
+ });
+
+ // ---------- T-035: the idle logo in the phone top bar (js/shell.js "The idle logo", css/style.css "Top-bar idle logo") ----------
+ await step('T-035 idle logo: page open, repeat, touch reset, pauses, reduced motion, no layout shift, brand tap, desktop unchanged',async()=>{
+   // a log of every play: window.__plays holds the start time, window.__ends the end time (performance.now) of each time the class bt-playing goes on or off
+   const logInit=()=>{window.__plays=[];window.__ends=[];window.__on=false;document.addEventListener('DOMContentLoaded',()=>{new MutationObserver(()=>{const t=document.querySelector('.topbar .brand-top');const on=!!t&&t.classList.contains('bt-playing');
+     if(on&&!window.__on)window.__plays.push(performance.now());if(!on&&window.__on)window.__ends.push(performance.now());window.__on=on}).observe(document.querySelector('.topbar'),{subtree:true,attributes:true,attributeFilter:['class']})})};
+   const mk=(vp,extra)=>fresh(Object.assign({viewport:vp,hasTouch:true,reducedMotion:'no-preference'},extra||{}),logInit);
+   const logs=pg=>pg.evaluate(()=>({p:window.__plays.slice(),e:window.__ends.slice(),on:window.__on}));
+   const timing=(pg,o)=>pg.evaluate(o=>Shell.idleLogo.setTiming(o),o);
+   // start a clean measurement: wait for the load play to finish, set a short wait, clear the log, then change page (which counts as a page open)
+   const open=async(pg,o,hash)=>{await pg.waitForTimeout(1400);await timing(pg,o);await pg.evaluate(h=>{window.__plays.length=0;window.__ends.length=0;location.hash=h},hash||'#/settings')};
+   const names=pg=>pg.evaluate(()=>[...document.querySelector('.topbar .brand-top').querySelectorAll('.bt-ch,.bt-mk,.bt-mk *,.bt-ov')].flatMap(e=>e.getAnimations().map(a=>a.animationName)).filter((v,i,a)=>a.indexOf(v)===i));
+   const errs0=errs.length;
+   // 1. constant and first load at 390
+   let {c,pg}=await mk({width:390,height:844});
+   let t=await pg.evaluate(()=>Shell.idleLogo.timing());
+   ok(t.REPEAT_MS===25000&&t.OPEN_MS===350,'idle logo: the repeat is the Board\'s 25 s (REPEAT_MS '+t.REPEAT_MS+') and the page-open delay is 350 ms');
+   let l=await logs(pg);ok(l.p.length===1,'idle logo 390 touch: plays once on the first page open ('+l.p.length+' play)');
+   // a11y: the accessible name stays; overlay is hidden from screen readers; the real text is untouched
+   const a11y=await pg.evaluate(()=>{const b=document.querySelector('.topbar .brand-top');const ov=b.querySelector('.bt-ov'),mkx=b.querySelector('.bt-mk');return {label:b.getAttribute('aria-label'),ov:ov&&ov.getAttribute('aria-hidden'),mk:mkx&&mkx.getAttribute('aria-hidden'),letters:ov?ov.children.length:0,text:[...b.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('')}});
+   ok(a11y.label==='CELPIP Study Hub, go to Home'&&a11y.ov==='true'&&a11y.mk==='true'&&a11y.letters===16&&a11y.text==='CELPIP Study Hub','idle logo: name stays "CELPIP Study Hub, go to Home" once; letters and mark are aria-hidden; the real text is intact '+JSON.stringify(a11y));
+   await pg.waitForTimeout(1300);
+   const rest=await pg.evaluate(()=>{const b=document.querySelector('.topbar .brand-top');const ch=b.querySelector('.bt-ch');return {cls:b.className,wc:getComputedStyle(ch).willChange,ovDisp:getComputedStyle(b.querySelector('.bt-ov')).display,color:getComputedStyle(b).color}});
+   ok(!rest.cls.includes('bt-playing')&&rest.wc==='auto'&&rest.ovDisp==='none'&&rest.color!=='rgba(0, 0, 0, 0)','idle logo: after the play the class is gone, will-change is off, the overlay is hidden and the words show again '+JSON.stringify(rest));
+   // 2. layout: brand width, bar height and neighbours constant in every frame of a play
+   await timing(pg,{OPEN_MS:50});
+   const lay=await pg.evaluate(()=>new Promise(res=>{location.hash='#/settings';const rows=[];const t0=performance.now();const brand=()=>document.querySelector('.topbar .brand-top'),bar=document.querySelector('.topbar'),mb=document.querySelector('.topbar .menu-btn'),tb=document.querySelector('.topbar [data-theme-btn]');
+     (function f(){const b=brand().getBoundingClientRect();rows.push([Math.round(b.width*100),Math.round(b.height*100),Math.round(b.x*100),Math.round(bar.getBoundingClientRect().height*100),Math.round(mb.getBoundingClientRect().x*100),Math.round(tb.getBoundingClientRect().x*100),brand().classList.contains('bt-playing')?1:0]);
+       if(performance.now()-t0<2100)requestAnimationFrame(f);else res(rows)})()}));
+   const uniq=i=>new Set(lay.map(r=>r[i])).size;
+   ok(lay.filter(r=>r[6]).length>60&&[0,1,2,3,4,5].every(i=>uniq(i)===1),'idle logo 390: brand width, height and position, bar height, menu and theme buttons never move across '+lay.length+' frames ('+lay.filter(r=>r[6]).length+' while playing; brand '+(lay[0][0]/100)+' x '+(lay[0][1]/100)+')');
+   await c.close();
+   // 3. repeat while idle (wait shortened to 1.2 s through the hook; the constant itself is asserted above)
+   ({c,pg}=await mk({width:390,height:844}));
+   await open(pg,{REPEAT_MS:1200,OPEN_MS:50});await pg.waitForTimeout(3700);l=await logs(pg);
+   ok(l.p.length>=2&&l.p.length<=3,'idle logo: plays on the route change, then repeats while idle ('+l.p.length+' plays in 3.7 s)');
+   const gap=l.p[1]-l.e[0];ok(gap>=1100&&gap<=1500,'idle logo: the next play comes REPEAT_MS after the end of the last one ('+Math.round(gap)+' ms after, wait 1200)');
+   await c.close();
+   // 4. a key press resets the count; a scroll resets it too
+   for(const how of ['key','scroll']){
+     ({c,pg}=await mk({width:390,height:844}));await open(pg,{REPEAT_MS:2000,OPEN_MS:50});
+     await pg.waitForFunction(()=>window.__ends.length>=1,null,{timeout:4000});const E=await pg.evaluate(()=>window.__ends[0]),now0=await pg.evaluate(()=>performance.now());
+     await pg.waitForTimeout(Math.max(0,1000-(now0-E)));
+     if(how==='key')await pg.keyboard.press('Shift');else await pg.evaluate(()=>window.dispatchEvent(new Event('scroll')));
+     const Tt=await pg.evaluate(()=>performance.now());
+     await pg.waitForFunction(()=>window.__plays.length>=2,null,{timeout:5000});const S=await pg.evaluate(()=>window.__plays[1]);
+     ok(S-Tt>=1850&&S-E>=2900,'idle logo: a '+how+' event restarts the 2 s count ('+Math.round(S-Tt)+' ms after it; without a reset the play would come about '+Math.round(2000-(Tt-E))+' ms after)');
+     await c.close();}
+   // 5. never in practice or exam (focus mode)
+   ({c,pg}=await mk({width:390,height:844}));await timing(pg,{REPEAT_MS:800,OPEN_MS:50});
+   await go2(pg,'#/practice/reading');await pg.evaluate(()=>window.scrollTo(0,0));await pg.waitForTimeout(1800);await pg.click('#quickBtn');await pg.waitForTimeout(400);
+   ok(await pg.evaluate(()=>document.body.getAttribute('data-mode'))==='focus','idle logo: practice is running (focus mode)');
+   await pg.evaluate(()=>{window.__plays.length=0;window.__ends.length=0});await pg.waitForTimeout(3500);l=await logs(pg);
+   ok(l.p.length===0&&!l.on&&await pg.evaluate(()=>Shell.idleLogo.blocked())==='practice or exam','idle logo: never plays in focus mode ('+l.p.length+' plays in 3.5 s with a 0.8 s wait)');
+   await c.close();
+   // 6. paused while collapsed; the count restarts when the bar comes back
+   ({c,pg}=await mk({width:390,height:844}));await open(pg,{REPEAT_MS:800,OPEN_MS:50},'#/settings');await pg.waitForTimeout(1700);
+   await pg.evaluate(()=>window.scrollTo(0,1500));await pg.waitForTimeout(700);
+   ok(await pg.evaluate(()=>document.documentElement.getAttribute('data-collapsed'))==='1','idle logo: scrolled down, the bar is collapsed');
+   await pg.evaluate(()=>{window.__plays.length=0});await pg.waitForTimeout(3000);l=await logs(pg);
+   ok(l.p.length===0&&await pg.evaluate(()=>Shell.idleLogo.blocked())==='bar collapsed','idle logo: no play while the bar is collapsed ('+l.p.length+' in 3 s)');
+   await pg.evaluate(()=>window.scrollTo(0,0));const back=Date.now();await pg.waitForFunction(()=>window.__plays.length>=1,null,{timeout:4000});const dt=Date.now()-back;
+   ok(dt>=600,'idle logo: when the bar returns the count starts from zero, no play at once ('+dt+' ms later, wait 800)');
+   await c.close();
+   // 7. paused while the drawer is open
+   ({c,pg}=await mk({width:390,height:844}));await open(pg,{REPEAT_MS:800,OPEN_MS:50},'#/settings');await pg.waitForTimeout(1700);
+   const mb=await pg.$eval('.topbar .menu-btn',e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}});await pg.touchscreen.tap(mb.x,mb.y);await pg.waitForTimeout(500);
+   ok(await pg.evaluate(()=>document.documentElement.getAttribute('data-overlay'))==='open','idle logo: the drawer is open');
+   await pg.evaluate(()=>{window.__plays.length=0});await pg.waitForTimeout(3000);l=await logs(pg);
+   ok(l.p.length===0&&await pg.evaluate(()=>Shell.idleLogo.blocked())==='menu open','idle logo: no play while the drawer is open ('+l.p.length+' in 3 s)');
+   await pg.keyboard.press('Escape');await pg.waitForFunction(()=>window.__plays.length>=1,null,{timeout:4000});ok(true,'idle logo: after the drawer closes it can play again');
+   await c.close();
+   // 8. paused while the tab is hidden
+   ({c,pg}=await mk({width:390,height:844}));await open(pg,{REPEAT_MS:800,OPEN_MS:50},'#/settings');await pg.waitForTimeout(1700);
+   await pg.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));window.__plays.length=0});await pg.waitForTimeout(3000);l=await logs(pg);
+   ok(l.p.length===0&&await pg.evaluate(()=>Shell.idleLogo.blocked())==='tab hidden','idle logo: no play while the tab is hidden ('+l.p.length+' in 3 s)');
+   await pg.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});document.dispatchEvent(new Event('visibilitychange'))});await pg.waitForFunction(()=>window.__plays.length>=1,null,{timeout:4000});ok(true,'idle logo: it can play again once the tab is shown');
+   await c.close();
+   // 9. the motion on: the fold, the mark and the T-034 Draw keyframes run together; tablet in the phone layout plays too
+   ({c,pg}=await mk({width:820,height:1180}));await open(pg,{REPEAT_MS:25000,OPEN_MS:50});await pg.waitForFunction(()=>window.__on,null,{timeout:3000});await pg.waitForTimeout(120);   // early: the fold is over by 390 ms
+   const nm=await names(pg);ok(['bt-fold','bt-unfold','bt-mark','bt-lift','lg-draw-c','lg-draw-ring','lg-sheen'].every(n=>nm.includes(n)),'idle logo 820 touch (phone layout): the fold, mark, Lift and the T-034 Draw run: '+nm.join(','));
+   await c.close();
+   // 10. reduced motion: one cross-fade on page open, no repeats
+   ({c,pg}=await mk({width:390,height:844},{reducedMotion:'reduce'}));await open(pg,{REPEAT_MS:600,OPEN_MS:50});await pg.waitForFunction(()=>window.__on,null,{timeout:3000});await pg.waitForTimeout(300);
+   const rn=await names(pg);ok(rn.includes('bt-rm-txt')&&rn.includes('bt-rm-mk')&&!rn.includes('bt-fold')&&!rn.includes('lg-draw-c')&&!rn.includes('bt-lift'),'idle logo reduced motion: only the opacity cross-fade runs: '+rn.join(','));
+   await pg.waitForTimeout(3500);l=await logs(pg);ok(l.p.length===1&&l.e.length===1,'idle logo reduced motion: played once on page open and never repeated ('+l.p.length+' play in 3.8 s with a 0.6 s wait)');
+   await c.close();
+   // 11. tapping the brand: any play stops at once and Home opens
+   ({c,pg}=await mk({width:390,height:844}));await open(pg,{REPEAT_MS:25000,OPEN_MS:350},'#/settings');await pg.waitForFunction(()=>window.__on,null,{timeout:3000});await pg.waitForTimeout(300);
+   const bb=await pg.$eval('.topbar .brand-top',e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}});
+   await pg.touchscreen.tap(bb.x,bb.y);const afterTap=await pg.evaluate(()=>({on:window.__on,hash:location.hash}));
+   ok(!afterTap.on,'idle logo: tapping the brand stops the play at once (no 350 ms wait)');
+   await pg.waitForFunction(()=>location.hash==='#/dashboard',null,{timeout:1500});ok(true,'idle logo: tapping the brand opens Home');
+   await c.close();
+   // 12. desktop and other non-touch screens: nothing changes
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'no-preference'},logInit));await open(pg,{OPEN_MS:50});await pg.waitForTimeout(1800);l=await logs(pg);
+   ok(l.p.length===0&&await pg.evaluate(()=>!document.querySelector('.bt-ov')&&Shell.idleLogo.blocked()==='not a touch phone layout'),'idle logo 1440 hover: no play, no overlay added, the top bar is as before');
+   await c.close();
+   ({c,pg}=await fresh({viewport:{width:700,height:900},reducedMotion:'no-preference'},logInit));await open(pg,{OPEN_MS:50});await pg.waitForTimeout(1800);l=await logs(pg);
+   ok(l.p.length===0&&await pg.evaluate(()=>!document.querySelector('.bt-ov')&&getComputedStyle(document.querySelector('.topbar .brand-top')).display!=='none'),'idle logo 700 with a mouse (hover): the words show and nothing plays');
+   await c.close();
+   ({c,pg}=await mk({width:1100,height:800}));await open(pg,{OPEN_MS:50});await pg.waitForTimeout(1800);l=await logs(pg);
+   ok(l.p.length===0,'idle logo 1100 touch (rail layout, no top-bar brand): no play');
+   await c.close();
+   // 13. pictures for the Board (frames of the real app at 390, light and dark), only when a folder was given
+   if(SHOTS)for(const th of ['light','dark']){
+     ({c,pg}=await mk({width:390,height:844}));await pg.evaluate(t=>Shell.setTheme(t),th);await pg.waitForTimeout(300);await timing(pg,{OPEN_MS:50});
+     await pg.evaluate(()=>{window.__plays.length=0;location.hash='#/settings'});await pg.waitForFunction(()=>window.__on,null,{timeout:3000});
+     for(const f of [0,70,140,210,280,350,420,490,560,630,700,770,840,910,980,1050,1120,1190,1260,1330,1400,1470]){
+       await pg.evaluate(f=>{document.querySelector('.topbar .brand-top').getAnimations({subtree:true}).forEach(a=>{a.pause();a.currentTime=f})},f);
+       await pg.screenshot({path:sp('t035-'+th+'-'+String(f).padStart(4,'0')+'.png'),clip:{x:0,y:0,width:390,height:64}})}
+     await c.close()}
+   ok(errs.length===errs0,'idle logo: no console or page errors in this step ('+(errs.length-errs0)+')');
  });
 
  console.log(`\n${fails} failure(s)`);await b.close();process.exit(fails?1:0)})();
