@@ -306,7 +306,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const pb=()=>ph.$eval('#themeBtn',e=>[e.getAttribute('aria-label'),e.querySelector('use').getAttribute('href')].join('|'));
    const seq=[await pb()];for(let i=0;i<3;i++){await ph.click('#themeBtn');await ph.waitForTimeout(150);seq.push(await pb())}
    ok(seq.join(' ; ')==='Theme: Light, change|#i-sun ; Theme: Dark, change|#i-moon ; Theme: Auto, change|#i-theme ; Theme: Light, change|#i-sun','phone theme button: icon and label follow Light > Dark > Auto > Light ('+seq.join(' ; ')+')');
-   ok(await ph.$eval('#themeBtn',e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44}),'phone theme button is at least 44px');
+   ok(await ph.$eval('#themeBtn',e=>e.offsetWidth>=44&&e.offsetHeight>=44),'phone theme button is at least 44px');   // offset sizes are the layout size; getBoundingClientRect would include the honey press squash (T-040) if the button was just pressed
    ok(await ph.evaluate(()=>!document.querySelector('[data-theme-set], [role=radiogroup]')),'theme: the three-button switch is gone with the More sheet; the one button cycles the choices');
    await phc.close()});
 
@@ -1064,7 +1064,7 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const css=await pg.evaluate(async()=>(await fetch('css/style.css')).text());
    ok(/\.topbar \{[^}]*(safe-area-inset-top|var\(--sat\))/.test(css)&&/\.taskbar \{[^}]*safe-area-inset-top/.test(css)&&/\.tabbar \{[^}]*safe-area-inset-bottom/.test(css)&&/\.toast-host \{[^}]*safe-area-inset-bottom/.test(css),'iPhone fit: top bar, task bar, tab bar and toasts use env(safe-area-inset-*)');
    ok(await pg.evaluate(()=>getComputedStyle(document.documentElement).overscrollBehaviorY==='contain'),'overscroll-behavior-y: contain on the page (a drag down does not reload mid-exam)');
-   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v16')),'service worker cache is celpip-v16');
+   ok(await pg.evaluate(async()=>(await caches.keys()).includes('celpip-v17')),'service worker cache is celpip-v17');
    await c.close()});
 
  await step('T-031 install button: Chrome event, iPhone steps, already installed',async()=>{
@@ -1792,8 +1792,8 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
  await step('T-032 offline after the first visit still opens every route',async()=>{
    const c=await b.newContext({viewport:{width:1280,height:900}});const pg=await c.newPage();pg.on('pageerror',e=>errs.push(e.message));
    await pg.goto(BASE);
-   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v16')&&(await (await caches.open('celpip-v16')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
-   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v16');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
+   await pg.evaluate(async()=>{for(let i=0;i<300;i++){const k=await caches.keys();if(k.includes('celpip-v17')&&(await (await caches.open('celpip-v17')).keys()).length>=40)return;await new Promise(r=>setTimeout(r,100))}});
+   const cached=await pg.evaluate(async()=>{const ca=await caches.open('celpip-v17');const out=[];for(const f of Loader.files().concat(['js/loader.js','js/data/meta.js'])){out.push(!!(await ca.match(new URL(f,location.href).href)))}return out});
    ok(cached.length===18&&cached.every(Boolean),'offline: sw.js saved all 16 data files plus loader.js and meta.js on the first visit ('+cached.filter(Boolean).length+' of '+cached.length+')');
    await pg.reload();await pg.waitForTimeout(800);
    ok(await pg.evaluate(()=>!!navigator.serviceWorker.controller),'offline: the page is controlled by the service worker');
@@ -2220,10 +2220,11 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    const pa=await pg.screenshot({clip:{x:10,y:10,width:36,height:36}}),pb=await pg.screenshot({clip:{x:110,y:10,width:36,height:36}});
    ok(Buffer.compare(pa,pb)===0,'logo: the resting animated mark is pixel-identical to the old mark (36px, light)');
    await pg.evaluate(()=>document.getElementById('cmp').remove());
-   const b0=await box(pg,S),w0=await box(pg,S+' span:not(.mk-in)'),m0=await box(pg,S+' .mark');
+const lbox=(pg,sel)=>pg.$eval(sel,e=>{const chain=[];for(let n=e;n&&n!==document.body;n=n.parentElement)chain.push([n,n.style.translate,n.style.scale,n.style.rotate]);chain.forEach(c=>{c[0].style.translate=c[0].style.scale=c[0].style.rotate=''});const r=e.getBoundingClientRect();chain.forEach(c=>{c[0].style.translate=c[1];c[0].style.scale=c[2];c[0].style.rotate=c[3]});return {x:r.x,y:r.y,w:r.width,h:r.height}});   // the box with the honey hover swell (inline translate, scale, rotate) taken off, put back after (T-040): layout only
+   const b0=await lbox(pg,S),w0=await lbox(pg,S+' span:not(.mk-in)'),m0=await box(pg,S+' .mark');
    const m=await mid(pg,S+' .mark');await pg.mouse.move(m.x,m.y);await pg.waitForTimeout(300);
    r=await probe(pg,S);ok(playing(r),'logo 1440: mouse hover plays Lift (tilt, shadow, sheen) and Draw (C, ring): '+r.names.join(','));
-   const b1=await box(pg,S),w1=await box(pg,S+' span:not(.mk-in)');
+   const b1=await lbox(pg,S),w1=await lbox(pg,S+' span:not(.mk-in)');
    ok(b0.x===b1.x&&b0.y===b1.y&&b0.w===b1.w&&b0.h===b1.h&&w0.x===w1.x&&w0.y===w1.y&&w0.w===w1.w,'logo: no layout shift (link box and wordmark do not move while it plays)');
    if(SHOTS){await pg.waitForTimeout(500);}
    await pg.mouse.move(700,500);await pg.waitForTimeout(500);r=await probe(pg,S);ok(still(r),'logo 1440: leaving the logo returns it to rest');
@@ -2252,9 +2253,9 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
    ({c,pg}=await mk({width:1100,height:800}));
    const R='#rail .logo-only';
    r=await probe(pg,R);ok(r.cls.includes('lg-wide')&&still(r),'logo 1100: rail mark is the animated kind and still at rest');
-   const rb0=await box(pg,R);const rm=await mid(pg,R);await pg.mouse.move(rm.x,rm.y);await pg.waitForTimeout(300);
+   const rb0=await lbox(pg,R);const rm=await mid(pg,R);await pg.mouse.move(rm.x,rm.y);await pg.waitForTimeout(300);
    r=await probe(pg,R);ok(playing(r),'logo 1100: mouse hover on the rail mark plays it');
-   const rb1=await box(pg,R);ok(rb0.x===rb1.x&&rb0.y===rb1.y&&rb0.w===rb1.w&&rb0.h===rb1.h,'logo 1100: no layout shift on the rail');
+   const rb1=await lbox(pg,R);ok(rb0.x===rb1.x&&rb0.y===rb1.y&&rb0.w===rb1.w&&rb0.h===rb1.h,'logo 1100: no layout shift on the rail');
    await pg.mouse.move(700,500);await pg.waitForTimeout(500);await keyFocus(pg,R);await pg.waitForTimeout(300);r=await probe(pg,R);ok(playing(r),'logo 1100: Tab focus on the rail mark plays it');
    if(SHOTS){await pg.evaluate(()=>{document.querySelectorAll('.mk-in').forEach(()=>{})});}
    await c.close();
@@ -2420,6 +2421,114 @@ let fails=0;const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)fails++};
        await pg.screenshot({path:sp('t035-'+th+'-'+String(f).padStart(4,'0')+'.png'),clip:{x:0,y:0,width:390,height:64}})}
      await c.close()}
    ok(errs.length===errs0,'idle logo: no console or page errors in this step ('+(errs.length-errs0)+')');
+ });
+
+ // ---------- T-040: honey motion (js/honey.js), desktop hamburger swap, top bar refresh peek (js/shell.js, css/style.css) ----------
+ await step('T-040 honey: press squash, hover lean, focus mode, reduced motion, hamburger swap, no peek on refresh',async()=>{
+   const errs0=errs.length;
+   // a per-frame log of one element's scale/translate while a test runs (computed values, so it also sees what the CSS adds)
+   const sampler=(sel)=>{window.__hs=[];const el=document.querySelector(sel);const t0=performance.now();const f=()=>{const cs=getComputedStyle(el);window.__hs.push([Math.round(performance.now()-t0),cs.scale,cs.translate,el.style.translate+'|'+el.style.scale+'|'+el.style.rotate]);if(performance.now()-t0<2200)requestAnimationFrame(f)};requestAnimationFrame(f)};
+   const scaleY=r=>{const v=String(r[1]).split(' ');return parseFloat(v[1]||v[0])||1};
+   const centre=(pg,sel)=>pg.$eval(sel,e=>{const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}});
+   // 1. desktop mouse: hover lean, press squash with a soft overshoot, back to rest with the inline styles cleared
+   let {c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'no-preference'});
+   ok(await pg.evaluate(()=>Honey.thickness===4&&document.documentElement.getAttribute('data-honey')==='1'),'honey: thickness is the fixed 4 and html[data-honey] is 1');
+   const tm=await pg.evaluate(()=>Honey.timing());
+   ok(tm.settleMs>=300&&tm.settleMs<=1500&&/^linear\(/.test(tm.ease)&&/ms$/.test(tm.dur),'honey: --h-ease is a linear() curve and --h-dur is its settle time ('+tm.settleMs+' ms, K '+Math.round(tm.K)+', z '+tm.z.toFixed(2)+')');
+   let p0=await centre(pg,'#themeBtn');
+   await pg.mouse.move(p0.x-30,p0.y-4);await pg.mouse.move(p0.x+8,p0.y+3);await pg.waitForTimeout(350);
+   const hov=await pg.$eval('#themeBtn',e=>({t:e.style.translate,s:e.style.scale}));
+   ok(hov.t!==''&&hov.s!=='','honey hover (mouse): the button leans and swells ('+hov.t+' / '+hov.s+')');
+   await pg.evaluate(sampler,'#themeBtn');await pg.mouse.down();await pg.waitForTimeout(220);await pg.mouse.up();await pg.waitForTimeout(1700);
+   let smp=await pg.evaluate(()=>window.__hs);const minY=Math.min(...smp.map(scaleY)),maxY=Math.max(...smp.map(r=>scaleY(r)));
+   ok(minY<0.97,'honey press: the button squashes (scale Y min '+minY.toFixed(3)+')');
+   ok(maxY>1.0005,'honey press: it springs back with a soft overshoot (scale Y max '+maxY.toFixed(3)+')');
+   await pg.mouse.move(10,500);await pg.waitForTimeout(1600);
+   const rest=await pg.$eval('#themeBtn',e=>({t:e.style.translate,s:e.style.scale,r:e.style.rotate}));
+   ok(rest.t===''&&rest.s===''&&rest.r==='','honey: after the pointer leaves, the inline translate, scale and rotate are cleared (back to rest)');
+   const live=await pg.evaluate(()=>Honey.state());ok(live.active===0&&live.engaged===0,'honey: nothing keeps running at rest (active '+live.active+', engaged '+live.engaged+')');
+   // the page-change circle wipe still works (honey did not break it): press a menu link, the wipe runs and the page changes
+   await pg.click('#sidebar a[data-section="settings"]');await pg.waitForFunction(()=>location.hash==='#/settings',null,{timeout:3000});ok(true,'honey: a menu page link still changes the page (circle wipe untouched)');
+   await c.close();
+   // 2. focus mode: press squash only, stiff, no overshoot, no hover lean
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'no-preference'}));
+   await pg.evaluate(()=>Shell.focusMode.enter({name:'Reading practice',back:'#/practice'}));await pg.waitForTimeout(500);
+   const ft=await pg.evaluate(()=>Honey.timing());ok(ft.z===0.95&&ft.K===420&&ft.depth===0.5,'honey focus mode: stiff spring, almost no bounce (K '+ft.K+', z '+ft.z+', press depth '+ft.depth+')');
+   p0=await centre(pg,'#exitBtn');await pg.mouse.move(p0.x-20,p0.y);await pg.mouse.move(p0.x+6,p0.y+2);await pg.waitForTimeout(400);
+   const fh=await pg.$eval('#exitBtn',e=>({t:e.style.translate,s:e.style.scale}));ok(fh.t===''&&fh.s==='','honey focus mode: no hover lean on a mouse hover');
+   await pg.evaluate(sampler,'#exitBtn');await pg.mouse.down();await pg.waitForTimeout(250);await pg.mouse.up();await pg.waitForTimeout(1700);
+   smp=await pg.evaluate(()=>window.__hs);const fMin=Math.min(...smp.map(scaleY)),fMax=Math.max(...smp.map(r=>scaleY(r)));
+   ok(fMin<0.995&&fMin>0.93,'honey focus mode: a slight press squash (scale Y min '+fMin.toFixed(3)+')');
+   ok(fMax<1.004,'honey focus mode: no bounce past rest (scale Y max '+fMax.toFixed(4)+')');
+   await pg.keyboard.press('Escape');await c.close();
+   // 3. reduced motion: honey is off, nothing is written to any element
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'reduce'}));
+   p0=await centre(pg,'#themeBtn');await pg.mouse.move(p0.x-30,p0.y);await pg.mouse.move(p0.x+6,p0.y+2);await pg.mouse.down();await pg.waitForTimeout(250);
+   const rm=await pg.evaluate(()=>({b:document.querySelector('#themeBtn').getAttribute('style')||'',h:document.documentElement.getAttribute('data-honey'),e:document.documentElement.style.getPropertyValue('--h-ease'),d:document.documentElement.style.getPropertyValue('--h-dur')}));
+   ok(!/translate|scale|rotate/.test(rm.b)&&rm.h==='0','honey reduced motion: no inline translate, scale or rotate on a pressed and hovered button, data-honey 0 ('+rm.b+')');
+   ok(rm.e==='linear'&&rm.d==='160ms','honey reduced motion: --h-ease is linear and --h-dur is 160 ms');
+   await pg.mouse.up();
+   // Review finding 1: under reduced motion, hovering a menu icon (sidebar row or rail) must not swell, tilt or nudge it. We find the first icon that is
+   // really on screen (width above 0), hover its link, wait out the 160 ms fade, and read the COMPUTED transform: "none" means nothing moved.
+   const icoSel=await pg.evaluate(()=>{const l=[...document.querySelectorAll('nav#mainNav a > .nav-ico, .ri .nav-ico')].find(e=>e.getBoundingClientRect().width>0);if(!l)return null;l.setAttribute('data-e2e-ico','1');return '[data-e2e-ico]'});
+   ok(!!icoSel,'honey reduced motion: a menu or rail icon is on screen at 1440');
+   if(icoSel){const ip=await centre(pg,icoSel);await pg.mouse.move(ip.x+60,ip.y+40);await pg.mouse.move(ip.x,ip.y);await pg.waitForTimeout(400);
+     const itx=await pg.$eval(icoSel,e=>getComputedStyle(e).transform);
+     ok(itx==='none','honey reduced motion: hovering a menu icon leaves its transform none (got '+itx+')');}
+   await c.close();
+   // 4. desktop hamburger swap (Board: keep it) and the muted desktop top-bar logo
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'no-preference'},()=>{window.__ls=0;window.__sw=[];document.addEventListener('DOMContentLoaded',()=>{try{new PerformanceObserver(l=>{l.getEntries().forEach(e=>{if(!e.hadRecentInput)window.__ls+=e.value})}).observe({type:'layout-shift',buffered:true})}catch(e){}
+     const a=document.getElementById('anchor');new MutationObserver(()=>{const on=a.classList.contains('ham-swap');const L=window.__sw;if(on&&(!L.length||L[L.length-1].e))L.push({s:performance.now(),e:0});if(!on&&L.length&&!L[L.length-1].e)L[L.length-1].e=performance.now()}).observe(a,{attributes:true,attributeFilter:['class']})})}));
+   ok(await pg.evaluate(()=>Shell.hamSwap.timing().HAM_MS===10000),'hamburger swap: HAM_MS is 10000 (10 s)');
+   ok(await pg.evaluate(()=>Shell.hamSwap.blocked())==='hamburger not showing','hamburger swap: not at the top of a page (the logo shows there, not a hamburger)');
+   await pg.evaluate(()=>{location.hash='#/plan'});await pg.waitForTimeout(900);
+   for(let i=1;i<=10;i++){await pg.evaluate(y=>window.scrollTo(0,y),i*120);await pg.waitForTimeout(40)}
+   await pg.waitForFunction(()=>document.documentElement.getAttribute('data-collapsed')==='1',null,{timeout:3000});
+   ok(await pg.evaluate(()=>Shell.hamSwap.blocked())==='','hamburger swap: allowed with the page scrolled down and the hamburger showing');
+   const aBox0=await pg.$eval('#anchor',e=>JSON.stringify(e.getBoundingClientRect())),tBox0=await pg.$eval('#topbar',e=>JSON.stringify(e.getBoundingClientRect()));
+   await pg.evaluate(()=>{window.__ls=0;window.__sw.length=0;Shell.hamSwap.setTiming({HAM_MS:1200})});   // CLS counts from here: page load shifts are not honey's
+   await pg.waitForFunction(()=>window.__sw.length>=2&&window.__sw[0].e,null,{timeout:9000});
+   const sw=await pg.evaluate(()=>window.__sw.map(x=>[Math.round(x.s),Math.round(x.e)]));
+   ok(sw[0][1]-sw[0][0]>=1900&&sw[0][1]-sw[0][0]<=2200,'hamburger swap: one swap lasts 2.0 s ('+(sw[0][1]-sw[0][0])+' ms) and repeats ('+sw.length+' starts)');
+   ok(sw[1][0]-sw[0][0]>=1950&&sw[1][0]-sw[0][0]<=2600,'hamburger swap: the next one starts when the last has ended, since the 1.2 s test timer is shorter than a swap (gap between starts '+Math.round(sw[1][0]-sw[0][0])+' ms); with HAM_MS 10000 starts are 10 s apart');
+   const during=await pg.evaluate(()=>new Promise(r=>{const t=Date.now();const w=()=>{const a=document.getElementById('anchor');if(a.classList.contains('ham-swap'))setTimeout(()=>{const hb=getComputedStyle(a.querySelector('.a-hb')).opacity,lg=getComputedStyle(a.querySelector('.a-logo')).opacity;r({hb,lg,mk:!!a.querySelector('.a-logo .mk-in'),clickable:!a.inert})},600);else if(Date.now()-t>6000)r(null);else setTimeout(w,40)};w()}));
+   ok(during&&parseFloat(during.hb)<0.2&&parseFloat(during.lg)>0.8&&during.mk&&during.clickable,'hamburger swap: mid-swap the hamburger has faded (opacity '+(during&&during.hb)+'), the logo mark shows (opacity '+(during&&during.lg)+') and the button stays clickable');
+   await pg.evaluate(()=>Shell.hamSwap.setTiming({HAM_MS:10000}));   // back to the real 10 s so the swap can end and rest
+   await pg.waitForFunction(()=>!document.getElementById('anchor').classList.contains('ham-swap'),null,{timeout:4000});await pg.waitForTimeout(800);
+   ok(await pg.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('#anchor .a-hb')).opacity)>0.99),'hamburger swap: afterwards the hamburger is back at full opacity');
+   ok((await pg.$eval('#anchor',e=>JSON.stringify(e.getBoundingClientRect())))===aBox0&&(await pg.$eval('#topbar',e=>JSON.stringify(e.getBoundingClientRect())))===tBox0,'hamburger swap: the button and the top bar keep exactly their boxes (nothing moves)');
+   ok(await pg.evaluate(()=>window.__ls<0.001),'honey and swap: no layout shift across the swaps (CLS '+(await pg.evaluate(()=>window.__ls)).toFixed(4)+')');
+   ok(await pg.evaluate(()=>!document.querySelector('.bt-ov')&&Shell.idleLogo.blocked()==='not a touch phone layout'),'desktop top-bar logo idle stays muted: no overlay built, no idle play (Board)');
+   // pauses: menu open, focus mode, hidden tab (state) and reduced motion
+   await pg.evaluate(()=>Shell.nav.openOverlay(document.getElementById('anchor')));await pg.waitForTimeout(300);
+   ok(await pg.evaluate(()=>Shell.hamSwap.blocked())==='menu open','hamburger swap: paused while the menu is open');
+   await pg.evaluate(()=>Shell.nav.closeOverlay());await pg.waitForTimeout(300);
+   await pg.evaluate(()=>Shell.focusMode.enter({name:'Reading practice'}));
+   ok(await pg.evaluate(()=>Shell.hamSwap.blocked())==='practice or exam','hamburger swap: paused in focus mode');
+   await c.close();
+   ({c,pg}=await fresh({viewport:{width:1440,height:900},reducedMotion:'reduce'}));
+   ok(await pg.evaluate(()=>Shell.hamSwap.blocked())==='reduced motion','hamburger swap: reduced motion means no repeats');
+   await c.close();
+   // 5. the phone idle is untouched: 5 s and still plays at 390 touch
+   ({c,pg}=await fresh({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'no-preference'}));
+   ok(await pg.evaluate(()=>Shell.idleLogo.timing().REPEAT_MS===5000&&Shell.idleLogo.blocked()===''),'phone idle logo is unchanged: REPEAT_MS 5000 and allowed at 390 touch');
+   await c.close();
+   // 6. THE BUG: a refresh with the top bar collapsed must not draw the bar first (it used to show for 0.1 to 0.3 s, then fade away)
+   for(const [w,h,touch] of [[390,844,true],[820,1180,true],[1100,800,false],[1440,900,false]]){
+     const r=await fresh({viewport:{width:w,height:h},hasTouch:touch,reducedMotion:'no-preference'},()=>{window.__pk=[];const f=()=>{const bar=document.getElementById('topbar');if(bar)window.__pk.push([Math.round(performance.now()),document.documentElement.getAttribute('data-collapsed'),parseFloat(getComputedStyle(bar,'::before').opacity),Math.round(window.scrollY)]);requestAnimationFrame(f)};requestAnimationFrame(f)});
+     await r.pg.evaluate(()=>{location.hash='#/plan'});await r.pg.waitForTimeout(1500);
+     for(let i=1;i<=10;i++){await r.pg.evaluate(y=>window.scrollTo(0,y),i*120);await r.pg.waitForTimeout(50)}
+     await r.pg.waitForFunction(()=>document.documentElement.getAttribute('data-collapsed')==='1',null,{timeout:3000});await r.pg.waitForTimeout(500);
+     await r.pg.reload();await r.pg.waitForTimeout(1800);
+     const pk=await r.pg.evaluate(()=>({s:window.__pk.slice(),c:document.documentElement.getAttribute('data-collapsed'),y:Math.round(scrollY),boot:document.documentElement.hasAttribute('data-boot')}));
+     const peek=pk.s.filter(x=>x[2]>0.02).length;
+     ok(peek===0&&pk.c==='1'&&pk.y>500&&!pk.boot,'refresh at '+w+' px with the bar collapsed: the bar is never drawn ('+pk.s.length+' frames sampled, '+peek+' with the bar showing; collapsed '+pk.c+', scrollY '+pk.y+', boot flag cleared '+!pk.boot+')');
+     // a refresh at the top still shows the bar (nothing remembered leaks in)
+     await r.pg.evaluate(()=>window.scrollTo(0,0));await r.pg.waitForTimeout(500);await r.pg.reload();await r.pg.waitForTimeout(1200);
+     ok(await r.pg.evaluate(()=>document.documentElement.getAttribute('data-collapsed')!=='1'&&parseFloat(getComputedStyle(document.getElementById('topbar'),'::before').opacity)>0.9),'refresh at '+w+' px at the top of the page: the bar is shown');
+     await r.c.close();
+   }
+   ok(errs.length===errs0,'honey: no console or page errors in this step ('+(errs.length-errs0)+')');
  });
 
  console.log(`\n${fails} failure(s)`);await b.close();process.exit(fails?1:0)})();

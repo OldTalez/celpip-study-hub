@@ -350,7 +350,7 @@ nav#mainNav a[aria-current="page"] .go, nav#mainNav a:focus-visible .go { backgr
 }
 /* Rows fade in one after another, once each time the overlay island opens (not on page load, not when pinned). */
 @keyframes ni-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
-html[data-overlay="open"] nav#mainNav a { animation: ni-in var(--dur-3) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 24ms + 110ms); }
+/* (T-040: the row entrance moved to html.sb-enter, set by js/shell.js when the menu first appears or is expanded; see "Honey motion" at the end.) */
 
 /* Small drawn icons used by CSS (as masks, so they take the text colour). */
 :root {
@@ -1197,3 +1197,68 @@ html:not(.vt-route)::view-transition-group(root) { animation-duration: var(--dur
 .arr-pv-bar span { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 58px; justify-content: center; font: 700 .8125rem var(--font); color: var(--muted); border-radius: 14px; min-width: 0; }
 .arr-pv-bar .empty { border: 2px dashed var(--ctl); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .arr-track, .arr-thumb, .arr-mv { transition: none !important; } }
+
+/* ---------- Honey motion (T-040, Board-approved demo; the spring engine is js/honey.js) ----------
+   js/honey.js writes --h-ease (the spring drawn as a linear() easing curve) and --h-dur (how long it takes to settle). Moves that should feel
+   "weighted" use them: the menu sliding in, the page change, the switch knob. It also moves pressed and hovered things with the separate
+   `translate`, `scale` and `rotate` properties, and sets html[data-honey="1"] (off under reduced motion). Where an old rule pressed a button down
+   with `transform: scale(.97)`, honey does that squash now, so the old one is switched off here (otherwise a press would shrink twice). */
+html[data-honey="1"] :is(a.cta, .btn, .btn-icon, .scenario-item, .tab-btn, .dot, .quick, .arr-mv, .check-item input[type=checkbox]):active { transform: none !important; }
+html[data-honey="1"] .tabbar a:active .pill { transform: none; }
+/* The old rules fade `scale` over 100 to 180 ms. The spring writes `scale` on every frame, so that fade would make it mushy: the same lists without `scale`.
+   (:where() adds no weight, so the original, longer selectors still win where they are meant to.) */
+:where(html[data-honey="1"]) .icon-btn { transition: background-color var(--dur-2) var(--ease-io); }
+@media (min-width: 1000px) {
+  :where(html[data-honey="1"]) .topbar [data-theme-btn] { transition: background-color var(--dur-2) var(--ease-io), box-shadow var(--dur-3) var(--ease-io); }
+  :where(html[data-honey="1"]) .anchor { transition: opacity 160ms linear 260ms; }
+  :where(html[data-honey="1"][data-collapsed="1"]) .anchor { transition: opacity 80ms linear; }
+}
+@media (max-width: 999.98px) {
+  :where(html[data-honey="1"]) .topbar .menu-btn, :where(html[data-honey="1"]) .topbar [data-theme-btn], :where(html[data-honey="1"]) .topbar .brand-top { transition: transform 360ms var(--ease-out) 40ms, opacity 240ms var(--ease-out) 80ms, background-color var(--dur-2) var(--ease-io); }
+  :where(html[data-honey="1"][data-collapsed="1"]) .topbar .menu-btn, :where(html[data-honey="1"][data-collapsed="1"]) .topbar [data-theme-btn], :where(html[data-honey="1"][data-collapsed="1"]) .topbar .brand-top { transition: transform 320ms var(--ease-io), opacity 170ms var(--ease-in), background-color var(--dur-2) var(--ease-io); }
+}
+/* The menu (overlay island or phone drawer) slides in with the weighted ease, and may overshoot a little (it floats, so no gap shows). Closing keeps the quick ease-in. */
+.sidebar[data-open]:not([data-pinned]) { transition: clip-path var(--dur-4) var(--ease-out), opacity var(--dur-2) var(--ease-out), transform var(--h-dur) var(--h-ease), visibility 0s; }
+/* Page change: the new screen rises in with the weighted ease (the old one still fades out first). */
+@keyframes vt-in-h { from { opacity: 0; transform: translateY(18px) scale(.985); } }
+.vt-route::view-transition-new(screen) { animation: vt-in-h var(--h-dur) var(--h-ease) both; }
+/* Switches (Settings): the knob moves with the weighted ease. */
+.check-row input[type=checkbox]::before { transition: transform var(--h-dur) var(--h-ease), background-color var(--dur-3) var(--ease-io); }
+
+/* Refresh without the top bar peeking in (T-040 S3): while html[data-boot] is on, nothing may fade, so a bar that starts collapsed is simply collapsed. */
+html[data-boot] *, html[data-boot] *::before, html[data-boot] *::after { transition: none !important; }
+
+/* Menu rows and icons come in one after another when the menu first appears or is expanded (js/shell.js adds html.sb-enter for about two seconds).
+   `backwards` fill: before its turn a row waits invisible, and after the animation ends nothing is held, so the hover moves below still work. */
+@keyframes row-in-h { from { opacity: 0; transform: translateX(-18px) scale(.92); } to { opacity: 1; transform: none; } }
+@keyframes ico-in-h { from { opacity: 0; transform: scale(.35) rotate(-25deg); } to { opacity: 1; transform: none; } }
+html.sb-enter nav#mainNav a { animation: row-in-h var(--h-dur) var(--h-ease) backwards; animation-delay: calc(var(--i, 0) * 45ms + 120ms); }
+html.sb-enter nav#mainNav a > .nav-ico { animation: ico-in-h var(--h-dur) var(--h-ease) backwards; animation-delay: calc(var(--i, 0) * 45ms + 200ms); }
+/* Honey hover on menu icons (sidebar rows and rail): the icon swells 16 percent, tilts 7 degrees and nudges 3px right with the weighted ease. */
+nav#mainNav a > .nav-ico, .ri .nav-ico { transition: transform var(--h-dur) var(--h-ease); }
+@media (hover: hover) {
+  nav#mainNav a:hover > .nav-ico, .ri:hover .nav-ico { transform: translateX(3px) scale(1.16) rotate(-7deg); }
+}
+nav#mainNav a:focus-visible > .nav-ico, .ri:focus-visible .nav-ico { transform: translateX(3px) scale(1.16) rotate(-7deg); }
+@media (prefers-reduced-motion: reduce) {
+  html.sb-enter nav#mainNav a, html.sb-enter nav#mainNav a > .nav-ico { animation: none; }
+  nav#mainNav a:focus-visible > .nav-ico, .ri:focus-visible .nav-ico { transform: none; }
+}
+
+/* The hamburger idle swap (wide screens, js/shell.js "The hamburger idle swap"): the hamburger fades and turns away, the logo mark shows and plays Lift + Draw twice, the hamburger returns.
+   2.0 s in all. Only opacity and transform change, and the button keeps its size, so nothing moves. */
+@keyframes ham-mk { 0% { opacity: 0; transform: scale(.4); animation-timing-function: var(--ease-out); } 9%, 82% { opacity: 1; transform: none; animation-timing-function: var(--ease-io); } 92%, 100% { opacity: 0; transform: scale(.4); } }
+@keyframes ham-lift { 0%, 100% { transform: none; } 35% { transform: translateY(-2px) rotate(-4deg) scale(1.03); } }
+@keyframes ham-draw-c { 0% { stroke-dasharray: 100 100; stroke-dashoffset: 100; opacity: 0; } 3% { stroke-dasharray: 100 100; stroke-dashoffset: 96; opacity: 1; } 40%, 100% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: 1; } }
+@keyframes ham-draw-ring { 0% { stroke-dasharray: 100 100; stroke-dashoffset: 100; opacity: 0; } 3% { stroke-dasharray: 100 100; stroke-dashoffset: 97; opacity: .95; } 35% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: .95; } 55%, 100% { stroke-dasharray: 100 100; stroke-dashoffset: 0; opacity: 0; } }
+@keyframes ham-sheen { 0% { transform: translateX(-26px); opacity: 1; } 45%, 100% { transform: translateX(46px); opacity: 1; } }
+@keyframes ham-shadow { 0%, 100% { opacity: 0; } 30%, 40% { opacity: 1; } }
+@media (min-width: 1000px) and (prefers-reduced-motion: no-preference) {
+  html[data-collapsed="1"] .anchor.ham-swap .a-hb { opacity: 0; transform: scale(.6) rotate(-20deg); transition: transform 260ms var(--ease-in), opacity 260ms var(--ease-in); }
+  html[data-collapsed="1"] .anchor.ham-swap .a-logo { animation: ham-mk 2000ms linear both; }
+  .anchor.ham-swap .a-logo .mk-in { animation: ham-lift 1000ms var(--ease-io) 150ms 2 both; }
+  .anchor.ham-swap .a-logo .mk-in::after { animation: ham-shadow 1000ms linear 150ms 2 both; }
+  .anchor.ham-swap .a-logo .p-sheen { animation: ham-sheen 1000ms var(--ease-io) 150ms 2 both; }
+  .anchor.ham-swap .a-logo .p-c { animation: ham-draw-c 1000ms var(--ease-out) 150ms 2 both; }
+  .anchor.ham-swap .a-logo .s-ring { animation: ham-draw-ring 1000ms var(--ease-io) 150ms 2 both; }
+}

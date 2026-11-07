@@ -228,9 +228,25 @@ const Shell = (function () {
   // Collapsing never changes the page height (the bar and title keep their slot and only fade), so y is the same before and after.
   let lastY = window.scrollY, run = 0;
   const isCollapsed = () => root.getAttribute("data-collapsed") === "1";
+  // T-040 S3 (the "top bar peeks in on refresh" bug). A refresh gives the page back its scroll position a moment AFTER the first paint, and the collapse rule
+  // only runs on a scroll event, so the bar used to be drawn shown for 0.1 to 0.3 s and then fade away. Now the collapsed state is remembered for this tab
+  // (sessionStorage, key "celpip_bar" = the address plus 1 or 0) and the small script in index.html's head puts it back before the first paint, with
+  // html[data-boot] switching every transition off. settleBoot() below ends that and corrects it if the scroll position did not come back.
+  const BAR_KEY = "celpip_bar";
+  function rememberBar(c) { try { sessionStorage.setItem(BAR_KEY, window.location.hash + "|" + (c ? "1" : "0")); } catch (e) {} }
+  function settleBoot() {
+    if (!root.hasAttribute("data-boot")) return;
+    if (isCollapsed() && window.scrollY <= SETTINGS.collapseTopPx) setCollapsed(false);   // the scroll position did not come back (a shorter page): show the bar again
+    requestAnimationFrame(() => requestAnimationFrame(() => root.removeAttribute("data-boot")));   // two frames later transitions are allowed again
+  }
+  if (document.readyState === "complete") setTimeout(settleBoot, 300); else window.addEventListener("load", () => setTimeout(settleBoot, 300));
+  // Safety net (review finding 6): if the window "load" event stalls (a slow font or image), the page would stay in boot mode with every transition off.
+  // So settleBoot also runs on a fixed 2 s timer. Running twice is safe: the first line returns at once when data-boot is already gone.
+  setTimeout(settleBoot, 2000);
   function setCollapsed(c) {
     if (isCollapsed() === c) return;
     root.setAttribute("data-collapsed", c ? "1" : "0");
+    rememberBar(c);
     paintNav();       // decides who fades, who is inert and where the hamburger sits
     measureStack();
   }
@@ -247,6 +263,7 @@ const Shell = (function () {
     const d = y - lastY; lastY = y;
     if (focusState.on) { run = 0; setCollapsed(false); return; }   // no collapsing bar in practice or the exam
     if (overlayOpen()) return;                                      // the page is behind the open menu: ignore
+    if (y <= SETTINGS.collapseTopPx && root.hasAttribute("data-boot")) return;   // a refresh is still waiting for its scroll position to come back: keep the remembered state (settleBoot checks later)
     if (y <= SETTINGS.collapseTopPx) { run = 0; setCollapsed(false); return; }  // rule 1: near the top the bar is always shown
     if (d === 0) return;
     run = (d > 0) === (run > 0) ? run + d : d;
@@ -370,7 +387,7 @@ const Shell = (function () {
     syncNav(section);
     root.setAttribute("data-scrolled", "0");
     run = 0; lastY = window.scrollY;
-    setCollapsed(false);   // a new screen starts at the top with the full bar
+    if (!root.hasAttribute("data-boot")) setCollapsed(false);   // a new screen starts at the top with the full bar (but not while a refresh is restoring a collapsed bar: settleBoot decides)
   }
   function afterRender() {
     const app = document.getElementById("app");
@@ -446,6 +463,14 @@ const Shell = (function () {
     change();
     clearTimeout(glideTimer); glideTimer = setTimeout(() => root.classList.remove("glide"), SETTINGS.glideMs + 60);
   }
+  // T-040: the menu rows and their icons come in one after another (css/style.css, html.sb-enter) when the menu first appears or is expanded:
+  // on page load when it is pinned, when the pinned menu is unfolded from the rail, and each time the overlay or phone drawer opens. Not on a plain scroll or a page change.
+  let enterTimer = 0;
+  function enterSidebar() {
+    root.classList.remove("sb-enter"); void root.offsetWidth;   // reading offsetWidth makes the browser restart the animation if it was still on
+    root.classList.add("sb-enter");
+    clearTimeout(enterTimer); enterTimer = setTimeout(() => root.classList.remove("sb-enter"), 2200);
+  }
   function openOverlay(opener) {
     if (overlayOpen()) return;
     const side = byId("sidebar");
@@ -458,6 +483,7 @@ const Shell = (function () {
     }
     overlayOpener = opener || document.activeElement;
     root.setAttribute("data-overlay", "open");
+    enterSidebar();
     paintNav();
     const x = byId("islandX");
     if (x) { x.focus(); if (document.activeElement !== x) requestAnimationFrame(() => x.focus()); }   // initial focus: the X
@@ -668,6 +694,62 @@ const Shell = (function () {
     idleState.key = [isCollapsed(), overlayOpen(), focusState.on, document.hidden, idleQuery.matches].join();
   }
   idleWire();
+
+  // ---------- The hamburger idle swap on wide screens (T-040, Board-approved demo Company/Work/2026-11-06 T-040 honey-motion/demo/honey.html) ----------
+  // On a wide screen the hamburger is the "anchor" button (the logo mark that turns into a hamburger when the page is scrolled down and the menu fades).
+  // Board, 2026-11-06: "keep hamburger menu going". While the learner is idle with the anchor showing, every HAM_MS the hamburger fades away, the logo mark
+  // shows in its place and plays Lift + Draw twice, and then the hamburger comes back (SEQ_MS in all). Pressing the button still works during the swap.
+  // The desktop top-bar LOGO does not play an idle (Board: "mute the idle animation for logo"); the phone and tablet idle above is unchanged.
+  // Same pauses as the phone idle: practice or exam, tab hidden, menu or dialog open; reduced motion = no repeats. A play that is due then is skipped.
+  const HAM_MS = 10000;
+  const HAM = { HAM_MS: HAM_MS, SEQ_MS: 2000 };
+  const hamState = { playing: false, timer: 0, endTimer: 0, lastInput: 0, lastStart: 0 };
+  const hamAnchor = () => byId("anchor");
+  function hamBlocked() {
+    if (!wideQuery.matches) return "not a wide layout";
+    if (document.hidden) return "tab hidden";
+    if (reducedQuery.matches) return "reduced motion";
+    if (focusState.on) return "practice or exam";
+    if (!isCollapsed()) return "hamburger not showing";
+    if (overlayOpen()) return "menu open";
+    if (document.querySelector("dialog[open]")) return "dialog open";
+    const a = hamAnchor();
+    if (!a || a.inert) return "no hamburger";
+    return "";
+  }
+  function hamAbort() {
+    clearTimeout(hamState.endTimer);
+    const a = hamAnchor(); if (a) a.classList.remove("ham-swap");
+    hamState.playing = false;
+  }
+  function hamEnd() { hamAbort(); hamArm(); }
+  function hamPlay() {
+    const why = hamBlocked(); if (why) return why;
+    const a = hamAnchor(), logo = a.querySelector(".a-logo");
+    if (logo && !logo.querySelector(".mk-in")) { const old = logo.querySelector("svg.mark"); if (old) old.replaceWith(animatedMark()); }   // the animated copy of the mark, built the first time it is needed
+    a.classList.remove("ham-swap"); void a.offsetWidth;
+    a.classList.add("ham-swap");
+    hamState.playing = true; hamState.lastStart = Date.now();
+    clearTimeout(hamState.endTimer); hamState.endTimer = setTimeout(hamEnd, HAM.SEQ_MS);
+    return "";
+  }
+  // Next swap: HAM_MS after the later of the last touch and the last start. A blocked one is skipped (the next touch or state change re-arms it).
+  function hamArm() {
+    clearTimeout(hamState.timer); hamState.timer = 0;
+    if (reducedQuery.matches) return;
+    const delay = Math.max(0, Math.max(hamState.lastInput, hamState.lastStart) + HAM.HAM_MS - Date.now());
+    hamState.timer = setTimeout(() => { hamState.timer = 0; if (hamState.playing) return; if (!hamBlocked()) hamPlay(); hamArm(); }, delay);   // a swap still running ends first: hamEnd arms the next one
+  }
+  function hamInput() { hamState.lastInput = Date.now(); if (!hamState.playing) hamArm(); }
+  (function hamWire() {
+    hamState.lastInput = Date.now();
+    ["pointerdown", "touchstart", "wheel", "keydown"].forEach(ev => document.addEventListener(ev, hamInput, { passive: true, capture: true }));
+    const sync = () => { if (hamBlocked() && hamState.playing) hamAbort(); };
+    new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ["data-collapsed", "data-overlay"] });
+    new MutationObserver(sync).observe(document.body || root, { attributes: true, attributeFilter: ["data-mode"] });
+    document.addEventListener("visibilitychange", sync);
+    hamArm();
+  })();
   const expand = () => document.querySelector("[data-rail-expand]");
   document.addEventListener("click", e => {
     const op = e.target.closest("[data-menu-open]");
@@ -675,7 +757,7 @@ const Shell = (function () {
     const ex = e.target.closest("[data-rail-expand]");
     if (ex) {
       // 1200px and up with the page at the top: pin the island again, in place, no dimming. Otherwise (1000 to 1199px) open it over the page.
-      if (pinQuery.matches && !isCollapsed()) { glide(() => { setSidebarPref("open"); paintNav(); }); const x = byId("islandX"); if (x) x.focus(); }
+      if (pinQuery.matches && !isCollapsed()) { glide(() => { setSidebarPref("open"); paintNav(); }); enterSidebar(); const x = byId("islandX"); if (x) x.focus(); }
       else openOverlay(ex);
       return;
     }
@@ -706,6 +788,7 @@ const Shell = (function () {
   [pinQuery, wideQuery].forEach(q => { if (q.addEventListener) q.addEventListener("change", paintNav); else if (q.addListener) q.addListener(paintNav); });
   buildRail();
   paintNav();
+  if (navForm() === "pinned" && wideQuery.matches && !isCollapsed()) enterSidebar();   // the pinned menu appears for the first time
   document.addEventListener("DOMContentLoaded", () => { buildRail(); paintNav(); });
   window.addEventListener("load", placeAnchor);
 
@@ -714,5 +797,6 @@ const Shell = (function () {
   document.addEventListener("DOMContentLoaded", fillThemeSwitches);
   if (document.readyState !== "loading") fillThemeSwitches();
 
-  return { SETTINGS, applyNavLayout, getTheme: getPref, setTheme, focusMode, contents, beforeRender, afterRender, fillThemeSwitches, confirmLeave, idleLogo: { timing: () => Object.assign({}, IDLE), setTiming: o => Object.assign(IDLE, o), playing: () => idleState.playing, blocked: idleBlocked }, nav: { form: navForm, overlayOpen, openOverlay, closeOverlay } };
+  return { SETTINGS, applyNavLayout, getTheme: getPref, setTheme, focusMode, contents, beforeRender, afterRender, fillThemeSwitches, confirmLeave, hamSwap: { timing: () => Object.assign({}, HAM), setTiming: o => { Object.assign(HAM, o); hamArm(); }, playing: () => hamState.playing, blocked: hamBlocked },
+    idleLogo: { timing: () => Object.assign({}, IDLE), setTiming: o => Object.assign(IDLE, o), playing: () => idleState.playing, blocked: idleBlocked }, nav: { form: navForm, overlayOpen, openOverlay, closeOverlay } };
 })();

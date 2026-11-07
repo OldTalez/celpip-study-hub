@@ -44,6 +44,12 @@
       h.setAttribute("data-theme", resolved);
       h.setAttribute("data-theme-pref", pref);
       h.setAttribute("data-nav", window.innerWidth >= 1200 && !folded ? "pinned" : "rail");
+      // T-040 S3: on a REFRESH of a page that was scrolled down with the top bar collapsed, start collapsed (no peek of the bar before the scroll position comes back).
+      // js/shell.js writes "celpip_bar" on every collapse; it removes data-boot again once the page has settled.
+      try {
+        var nav = performance.getEntriesByType("navigation")[0];
+        if (nav && nav.type === "reload" && sessionStorage.getItem("celpip_bar") === window.location.hash + "|1") { h.setAttribute("data-collapsed", "1"); h.setAttribute("data-boot", "1"); }
+      } catch (e) {}
       document.getElementById("metaTheme").setAttribute("content", resolved === "dark" ? "#000000" : "#FFFFFF");
     })();
   </script>
@@ -207,6 +213,7 @@
   <script src="js/data/meta.js" defer></script>
   <script src="js/loader.js" defer></script>
   <script src="js/shell.js" defer></script>
+  <script src="js/honey.js" defer></script> <!-- the honey feel: pressed things squash and spring back, hovered things lean, scrolled cards lag (T-040); needs only the page; also writes --h-ease and --h-dur for css/style.css -->
   <script src="js/pagewipe.js" defer></script> <!-- the circle wipe when a menu page is pressed, and its Settings switch (needs Shell; app.js and study.js check it) -->
   <script src="js/profiles.js" defer></script> <!-- who is studying: the profile list, key names, migration (must come before storage.js) -->
   <script src="js/navlayout.js" defer></script> <!-- the Arrange menu setting: order of the pages and the four bottom-bar pages, per profile, strictly checked (needs Profiles; storage.js uses it to check imports) -->
